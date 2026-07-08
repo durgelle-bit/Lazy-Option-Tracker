@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    @apply bg-vault-950;
+    font-feature-settings: 'tnum' 1, 'cv11' 1;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2a3442;
+    border-radius: 8px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3b4759;
+  }
+}
+
+@layer components {
+  .stat-card {
+    @apply relative overflow-hidden rounded-2xl border border-vault-700 bg-gradient-to-br from-vault-850 to-vault-900 p-5 shadow-card;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-vault-950 transition hover:bg-accent-glow active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-vault-600 bg-vault-800 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-vault-500 hover:bg-vault-750 active:scale-[0.98];
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-loss/40 bg-loss/10 px-4 py-2 text-sm font-medium text-loss-glow transition hover:bg-loss/20 active:scale-[0.98];
+  }
+
+  .btn-icon {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-md border border-vault-600 bg-vault-800 text-slate-300 transition hover:border-vault-500 hover:text-white active:scale-95;
+  }
+
+  .input-field {
+    @apply w-full rounded-lg border border-vault-600 bg-vault-800 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-accent focus:ring-1 focus:ring-accent/50;
+  }
+
+  .select-field {
+    @apply w-full rounded-lg border border-vault-600 bg-vault-800 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-accent focus:ring-1 focus:ring-accent/50;
+  }
+
+  .label-field {
+    @apply mb-1.5 block text-xs font-medium uppercase tracking-wider text-slate-400;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+}

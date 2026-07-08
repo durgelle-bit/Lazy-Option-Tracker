@@ -1,0 +1,152 @@
+import React, { useRef, useState } from 'react'
+import { AppData } from '../types'
+import { exportToFile, importFromFile } from '../utils/storage'
+import { X, Download, Upload, Save, AlertTriangle, Trash2, Settings as SettingsIcon } from 'lucide-react'
+import ModalShell from './ModalShell'
+import ConfirmDialog from './ConfirmDialog'
+
+interface Props {
+  data: AppData
+  onClose: () => void
+  onImport: (data: AppData) => void
+  onUpdateSettings: (startingCash: number, displayCurrency: string) => void
+  onFactoryReset: () => void
+  onToast: (msg: string, type?: 'success' | 'error' | 'info') => void
+}
+
+const CURRENCIES = ['USD', 'SGD', 'EUR', 'GBP', 'AUD', 'HKD', 'JPY']
+
+export default function SettingsPanel({ data, onClose, onImport, onUpdateSettings, onFactoryReset, onToast }: Props) {
+  const [startingCash, setStartingCash] = useState(String(data.settings.startingCash))
+  const [currency, setCurrency] = useState(data.settings.displayCurrency)
+  const [confirmReset, setConfirmReset] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  function handleSaveSettings() {
+    const cash = parseFloat(startingCash)
+    if (isNaN(cash) || cash < 0) {
+      onToast('Starting cash must be a valid non-negative number.', 'error')
+      return
+    }
+    onUpdateSettings(cash, currency)
+  }
+
+  function handleExport() {
+    const ok = exportToFile(data)
+    onToast(ok ? 'Data exported. Check your downloads folder.' : 'Export failed.', ok ? 'success' : 'error')
+  }
+
+  function handleImportClick() {
+    fileInputRef.current?.click()
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const imported = await importFromFile(file)
+      onImport(imported)
+    } catch (err: any) {
+      onToast(err?.message || 'Failed to import file.', 'error')
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  return (
+    <>
+      <ModalShell onClose={onClose} maxWidth="max-w-lg">
+        <div className="flex items-center justify-between border-b border-vault-700 px-6 py-4">
+          <div className="flex items-center gap-2">
+            <SettingsIcon size={18} className="text-accent" />
+            <h3 className="text-lg font-bold text-white">Settings & Data Portability</h3>
+          </div>
+          <button onClick={onClose} className="btn-icon">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="max-h-[70vh] space-y-6 overflow-y-auto px-6 py-5">
+          {/* Portfolio Settings */}
+          <section>
+            <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Portfolio Settings</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label-field">Starting Cash</label>
+                <input
+                  type="number"
+                  step="100"
+                  value={startingCash}
+                  onChange={(e) => setStartingCash(e.target.value)}
+                  className="input-field font-mono"
+                />
+              </div>
+              <div>
+                <label className="label-field">Display Currency</label>
+                <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="select-field">
+                  {CURRENCIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <button onClick={handleSaveSettings} className="btn-primary mt-3 w-full">
+              <Save size={16} /> Save Settings
+            </button>
+          </section>
+
+          <div className="h-px bg-vault-700" />
+
+          {/* Portability Suite */}
+          <section>
+            <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Portability Suite</h4>
+            <p className="mb-3 text-xs text-slate-500">
+              Your data lives only in this browser's local storage. Export regularly to back it up, or move it to
+              another device.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={handleExport} className="btn-secondary">
+                <Download size={16} /> Export to JSON
+              </button>
+              <button onClick={handleImportClick} className="btn-secondary">
+                <Upload size={16} /> Import from JSON
+              </button>
+            </div>
+            <input ref={fileInputRef} type="file" accept="application/json,.json" className="hidden" onChange={handleFileChange} />
+            <p className="mt-2 text-[11px] text-slate-600">
+              Importing will replace all current data in this browser. Export first if you want to keep a backup.
+            </p>
+          </section>
+
+          <div className="h-px bg-vault-700" />
+
+          {/* Danger Zone */}
+          <section>
+            <h4 className="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-loss-glow">
+              <AlertTriangle size={12} /> Danger Zone
+            </h4>
+            <button onClick={() => setConfirmReset(true)} className="btn-danger w-full">
+              <Trash2 size={16} /> Clear All Data
+            </button>
+          </section>
+        </div>
+      </ModalShell>
+
+      {confirmReset && (
+        <ConfirmDialog
+          title="Clear All Data?"
+          message="This will permanently erase every trade and reset your settings on this device. Export a backup first if you're unsure."
+          confirmLabel="Clear Everything"
+          danger
+          onConfirm={() => {
+            setConfirmReset(false)
+            onFactoryReset()
+          }}
+          onCancel={() => setConfirmReset(false)}
+        />
+      )}
+    </>
+  )
+}
