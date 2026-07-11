@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { AppData } from '../types'
-import { exportToFile, importFromFile } from '../utils/storage'
-import { X, Download, Upload, Save, AlertTriangle, Trash2, Settings as SettingsIcon } from 'lucide-react'
+import { exportToFile, importFromFile, describeLastExport } from '../utils/storage'
+import { X, Download, Upload, Save, AlertTriangle, Trash2, Settings as SettingsIcon, Clock } from 'lucide-react'
 import ModalShell from './ModalShell'
 import ConfirmDialog from './ConfirmDialog'
 
@@ -11,12 +11,13 @@ interface Props {
   onImport: (data: AppData) => void
   onUpdateSettings: (startingCash: number, displayCurrency: string) => void
   onFactoryReset: () => void
+  onExported: () => void
   onToast: (msg: string, type?: 'success' | 'error' | 'info') => void
 }
 
 const CURRENCIES = ['USD', 'SGD', 'EUR', 'GBP', 'AUD', 'HKD', 'JPY']
 
-export default function SettingsPanel({ data, onClose, onImport, onUpdateSettings, onFactoryReset, onToast }: Props) {
+export default function SettingsPanel({ data, onClose, onImport, onUpdateSettings, onFactoryReset, onExported, onToast }: Props) {
   const [startingCash, setStartingCash] = useState(String(data.settings.startingCash))
   const [currency, setCurrency] = useState(data.settings.displayCurrency)
   const [confirmReset, setConfirmReset] = useState(false)
@@ -33,6 +34,7 @@ export default function SettingsPanel({ data, onClose, onImport, onUpdateSetting
 
   function handleExport() {
     const ok = exportToFile(data)
+    if (ok) onExported()
     onToast(ok ? 'Data exported. Check your downloads folder.' : 'Export failed.', ok ? 'success' : 'error')
   }
 
@@ -106,6 +108,10 @@ export default function SettingsPanel({ data, onClose, onImport, onUpdateSetting
               Your data lives only in this browser's local storage. Export regularly to back it up, or move it to
               another device.
             </p>
+            <div className="mb-3 flex items-center gap-1.5 rounded-lg border border-vault-700 bg-vault-850 px-3 py-2 text-xs text-slate-400">
+              <Clock size={13} className="text-slate-500" />
+              {describeLastExport(data.settings.lastExportedAt)}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <button onClick={handleExport} className="btn-secondary">
                 <Download size={16} /> Export to JSON

@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useEffect } from 'react'
-import { Trade } from '../types'
+import { ProfitAllocation, Trade } from '../types'
 import { computeTotals, formatCurrency, formatPercent, isCredit, realizedPL } from '../utils/calc'
+import { describeLastExport } from '../utils/storage'
 import {
   Wallet,
   TrendingUp,
@@ -12,6 +13,10 @@ import {
   Archive,
   Plus,
   PieChart,
+  Landmark,
+  PiggyBank,
+  Clock,
+  AlertTriangle,
 } from 'lucide-react'
 import Chart from 'chart.js/auto'
 
@@ -19,8 +24,12 @@ interface Props {
   trades: Trade[]
   startingCash: number
   currency: string
+  profitAllocations: ProfitAllocation[]
+  lastExportedAt?: string
   onGoToActive: () => void
   onGoToSettled: () => void
+  onGoToAllocations: () => void
+  onGoToSettings: () => void
   onAddTrade: () => void
 }
 
@@ -28,11 +37,27 @@ export default function Dashboard({
   trades,
   startingCash,
   currency,
+  profitAllocations,
+  lastExportedAt,
   onGoToActive,
   onGoToSettled,
+  onGoToAllocations,
+  onGoToSettings,
   onAddTrade,
 }: Props) {
-  const totals = useMemo(() => computeTotals(trades, startingCash), [trades, startingCash])
+  const totals = useMemo(
+    () => computeTotals(trades, startingCash, profitAllocations),
+    [trades, startingCash, profitAllocations]
+  )
+
+  const exportStatusText = describeLastExport(lastExportedAt)
+  const daysSinceExport = useMemo(() => {
+    if (!lastExportedAt) return Infinity
+    const then = new Date(lastExportedAt).getTime()
+    if (isNaN(then)) return Infinity
+    return Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24))
+  }, [lastExportedAt])
+  const exportIsStale = daysSinceExport >= 7
 
   const closedTrades = useMemo(
     () => trades.filter((t) => t.status !== 'Open').sort((a, b) => (a.closeDate || '').localeCompare(b.closeDate || '')),
@@ -142,21 +167,68 @@ export default function Dashboard({
 
   return (
     <div className="animate-fade-in space-y-6">
+      {/* Export reminder banner */}
+      {exportIsStale && (
+        <button
+          onClick={onGoToSettings}
+          className="flex w-full items-center gap-3 rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-left transition hover:bg-gold/15"
+        >
+          <AlertTriangle size={16} className="shrink-0 text-gold-glow" />
+          <p className="flex-1 text-sm text-gold-glow">
+            <strong>{exportStatusText}.</strong>{' '}
+            {lastExportedAt
+              ? "It's been a while — back up your vault to JSON before you lose track."
+              : 'Your data only lives in this browser. Export a JSON backup to protect it.'}
+          </p>
+          <span className="shrink-0 text-xs font-semibold text-gold-glow underline">Go to Settings →</span>
+        </button>
+      )}
+
+      {/* Bankroll vs Gross Performance — the two-bucket accounting model */}
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-300">Trading Bankroll vs. Gross Performance</h3>
+          <button onClick={onGoToAllocations} className="flex items-center gap-1 text-xs font-medium text-accent hover:underline">
+            <Landmark size={12} /> Manage Allocations
+          </button>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCard
+            label="Total Realized Profit"
+            value={formatCurrency(totals.realizedProfit, currency)}
+            icon={totals.realizedProfit >= 0 ? <ArrowUpRight size={18} /> : <ArrowDownRight size={18} />}
+            accent={totals.realizedProfit >= 0 ? 'green' : 'red'}
+            sub="The Scoreboard · cumulative since inception, never reduced"
+            tooltip="Gross accumulated profit from all settled trades. This figure only ever grows with trading performance — withdrawals and stock purchases never touch it."
+          />
+          <StatCard
+            label="Total Deployed"
+            value={formatCurrency(totals.totalDeployed, currency)}
+            icon={<Landmark size={18} />}
+            accent="gold"
+            sub={`${profitAllocations.length} allocation${profitAllocations.length === 1 ? '' : 's'} · withdrawals + stock buys`}
+            tooltip="Sum of all Profit Allocation entries — money that has left the trading bankroll via withdrawal or stock purchase."
+          />
+          <StatCard
+            label="Cash Available for Trade"
+            value={formatCurrency(totals.cashAvailableForTrade, currency)}
+            icon={<Wallet size={18} />}
+            accent={totals.cashAvailableForTrade >= 0 ? 'blue' : 'red'}
+            sub="The Bankroll · Starting Cash + Profit − Deployed"
+            tooltip="(Initial Starting Cash + Total Realized Profit) − Total Deployed. This is your actual, spendable trading bankroll."
+          />
+        </div>
+      </div>
+
       {/* Top Stat Grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          label="Total Cash"
+          label="Total Cash (Gross)"
           value={formatCurrency(totals.totalCash, currency)}
-          icon={<Wallet size={18} />}
+          icon={<PiggyBank size={18} />}
           accent="blue"
           sub={`Starting: ${formatCurrency(startingCash, currency)}`}
-        />
-        <StatCard
-          label="Realized Profit"
-          value={formatCurrency(totals.realizedProfit, currency)}
-          icon={totals.realizedProfit >= 0 ? <ArrowUpRight size={18} /> : <ArrowDownRight size={18} />}
-          accent={totals.realizedProfit >= 0 ? 'green' : 'red'}
-          sub={`${totals.closedPositionsCount} settled trade${totals.closedPositionsCount === 1 ? '' : 's'}`}
+          tooltip="Brokerage-style running cash balance including capital tied up as collateral in open positions. Distinct from your bankroll above."
         />
         <StatCard
           label="Global Portfolio Velocity"
@@ -172,6 +244,13 @@ export default function Dashboard({
           icon={<Percent size={18} />}
           accent="gold"
           sub={`${totals.closedPositionsCount} closed positions`}
+        />
+        <StatCard
+          label="Last Export"
+          value={lastExportedAt ? `${daysSinceExport}d ago` : 'Never'}
+          icon={<Clock size={18} />}
+          accent={exportIsStale ? 'red' : 'green'}
+          sub={exportIsStale ? 'Backup recommended' : 'Backup is fresh'}
         />
       </div>
 

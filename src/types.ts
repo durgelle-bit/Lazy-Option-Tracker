@@ -32,11 +32,35 @@ export interface Trade {
 export interface AppSettings {
   startingCash: number
   displayCurrency: string
+  /** ISO timestamp of the last successful "Export to JSON" action. Undefined if never exported. */
+  lastExportedAt?: string
 }
+
+/** Category for a use of realized profits — money leaving the trading bankroll. */
+export type AllocationCategory = 'Withdrawal' | 'Stock Purchase'
+
+/**
+ * A single entry in the Profit Allocation ('Deployment') Ledger.
+ * Represents realized profit that has been withdrawn or redeployed outside
+ * the options trading bankroll. This NEVER changes Total Realized Profit
+ * (the Scoreboard) — it only affects Cash Available for Trade.
+ */
+export interface ProfitAllocation {
+  id: string
+  date: string // ISO date string
+  amount: number // always stored positive; represents $ removed from the bankroll
+  category: AllocationCategory
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export const ALLOCATION_CATEGORIES: AllocationCategory[] = ['Withdrawal', 'Stock Purchase']
 
 export interface AppData {
   version: number
   trades: Trade[]
+  profitAllocations: ProfitAllocation[]
   settings: AppSettings
 }
 

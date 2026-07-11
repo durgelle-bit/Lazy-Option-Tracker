@@ -1,4 +1,4 @@
-import { CREDIT_STRATEGIES, Trade } from '../types'
+import { CREDIT_STRATEGIES, ProfitAllocation, Trade } from '../types'
 
 export const isCredit = (strategy: Trade['strategy']) =>
   (CREDIT_STRATEGIES as string[]).includes(strategy)
@@ -83,8 +83,14 @@ export function annualizedExpectedReturn(t: Trade): number | null {
 }
 
 export interface PortfolioTotals {
+  /** Gross brokerage-style cash balance including collateral tied up by open positions. */
   totalCash: number
+  /** The 'Scoreboard': cumulative gross realized profit since inception. Never reduced by withdrawals/purchases. */
   realizedProfit: number
+  /** The 'Deployment' ledger total: sum of all profit allocations (withdrawals + stock purchases). */
+  totalDeployed: number
+  /** The actual trading bankroll: (Starting Cash + Realized Profit) - Total Deployed. */
+  cashAvailableForTrade: number
   openCreditExposure: number
   openDebitExposure: number
   openPositionsCount: number
@@ -93,7 +99,11 @@ export interface PortfolioTotals {
   globalVelocity: number
 }
 
-export function computeTotals(trades: Trade[], startingCash: number): PortfolioTotals {
+export function computeTotals(
+  trades: Trade[],
+  startingCash: number,
+  allocations: ProfitAllocation[] = []
+): PortfolioTotals {
   let cash = startingCash
   let realizedProfit = 0
   let openCreditExposure = 0
@@ -132,9 +142,14 @@ export function computeTotals(trades: Trade[], startingCash: number): PortfolioT
   const globalVelocity =
     totalCapitalDays > 0 ? (totalReturnWeighted / totalCapitalDays) * 365 * 100 : 0
 
+  const deployed = totalDeployed(allocations)
+  const bankroll = cashAvailableForTrade(startingCash, realizedProfit, deployed)
+
   return {
     totalCash: cash,
     realizedProfit,
+    totalDeployed: deployed,
+    cashAvailableForTrade: bankroll,
     openCreditExposure,
     openDebitExposure,
     openPositionsCount,
@@ -142,6 +157,25 @@ export function computeTotals(trades: Trade[], startingCash: number): PortfolioT
     winRate,
     globalVelocity,
   }
+}
+
+/**
+ * The 'Deployment' Ledger total — sum of every profit allocation entry
+ * (withdrawals + stock purchases). This money has left the trading bankroll
+ * but Total Realized Profit (the Scoreboard) is NEVER reduced by it.
+ */
+export function totalDeployed(allocations: ProfitAllocation[]): number {
+  return allocations.reduce((sum, a) => sum + (isFinite(a.amount) ? a.amount : 0), 0)
+}
+
+/**
+ * Cash Available for Trade — the actual trading bankroll you have left to deploy.
+ * Formula: (Initial Starting Cash + Total Realized Profit) - Total Deployed
+ * This is intentionally distinct from Total Realized Profit, which is a
+ * cumulative, never-decreasing scoreboard of gross trading performance.
+ */
+export function cashAvailableForTrade(startingCash: number, realizedProfit: number, deployed: number): number {
+  return startingCash + realizedProfit - deployed
 }
 
 export function formatCurrency(n: number, currency = 'USD'): string {
