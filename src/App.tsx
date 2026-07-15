@@ -124,8 +124,16 @@ export default function App() {
     setShowSettings(false)
   }
 
-  function handleUpdateSettings(startingCash: number, displayCurrency: string) {
-    setData((prev) => ({ ...prev, settings: { ...prev.settings, startingCash, displayCurrency } }))
+  function handleUpdateSettings(
+    startingCash: number,
+    displayCurrency: string,
+    reserveBufferEnabled: boolean,
+    reserveBufferPercent: number
+  ) {
+    setData((prev) => ({
+      ...prev,
+      settings: { ...prev.settings, startingCash, displayCurrency, reserveBufferEnabled, reserveBufferPercent },
+    }))
     push('Settings saved.', 'success')
   }
 
@@ -206,6 +214,8 @@ export default function App() {
               currency={data.settings.displayCurrency}
               profitAllocations={data.profitAllocations}
               lastExportedAt={data.settings.lastExportedAt}
+              reserveBufferEnabled={data.settings.reserveBufferEnabled}
+              reserveBufferPercent={data.settings.reserveBufferPercent}
               onGoToActive={() => setView('active')}
               onGoToSettled={() => setView('settled')}
               onGoToAllocations={() => setView('allocations')}

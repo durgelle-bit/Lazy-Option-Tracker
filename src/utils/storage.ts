@@ -11,6 +11,8 @@ export const DEFAULT_DATA: AppData = {
     startingCash: 10000,
     displayCurrency: 'USD',
     lastExportedAt: undefined,
+    reserveBufferEnabled: true,
+    reserveBufferPercent: 20,
   },
 }
 
@@ -71,7 +73,7 @@ export function loadData(): AppData {
       return structuredCloneSafe(DEFAULT_DATA)
     }
 
-    // Fill any missing fields defensively (forward-compat with older v1 saves)
+    // Fill any missing fields defensively (forward-compat with older v1/v2 saves)
     return {
       version: parsed.version ?? CURRENT_VERSION,
       trades: parsed.trades,
@@ -80,6 +82,8 @@ export function loadData(): AppData {
         startingCash: parsed.settings.startingCash ?? DEFAULT_DATA.settings.startingCash,
         displayCurrency: parsed.settings.displayCurrency ?? DEFAULT_DATA.settings.displayCurrency,
         lastExportedAt: parsed.settings.lastExportedAt ?? undefined,
+        reserveBufferEnabled: parsed.settings.reserveBufferEnabled ?? DEFAULT_DATA.settings.reserveBufferEnabled,
+        reserveBufferPercent: parsed.settings.reserveBufferPercent ?? DEFAULT_DATA.settings.reserveBufferPercent,
       },
     }
   } catch (err) {
@@ -151,6 +155,8 @@ export function importFromFile(file: File): Promise<AppData> {
             startingCash: parsed.settings.startingCash ?? DEFAULT_DATA.settings.startingCash,
             displayCurrency: parsed.settings.displayCurrency ?? DEFAULT_DATA.settings.displayCurrency,
             lastExportedAt: parsed.settings.lastExportedAt ?? undefined,
+            reserveBufferEnabled: parsed.settings.reserveBufferEnabled ?? DEFAULT_DATA.settings.reserveBufferEnabled,
+            reserveBufferPercent: parsed.settings.reserveBufferPercent ?? DEFAULT_DATA.settings.reserveBufferPercent,
           },
         })
       } catch (err) {

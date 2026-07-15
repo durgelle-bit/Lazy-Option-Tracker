@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useEffect } from 'react'
 import { ProfitAllocation, Trade } from '../types'
-import { computeTotals, formatCurrency, formatPercent, isCredit, realizedPL } from '../utils/calc'
+import { computeTotals, formatCurrency, formatPercent, isCredit, realizedPL, reserveBuffer } from '../utils/calc'
 import { describeLastExport } from '../utils/storage'
 import {
   Wallet,
@@ -17,6 +17,8 @@ import {
   PiggyBank,
   Clock,
   AlertTriangle,
+  TriangleAlert,
+  ShieldCheck,
 } from 'lucide-react'
 import Chart from 'chart.js/auto'
 
@@ -26,6 +28,8 @@ interface Props {
   currency: string
   profitAllocations: ProfitAllocation[]
   lastExportedAt?: string
+  reserveBufferEnabled: boolean
+  reserveBufferPercent: number
   onGoToActive: () => void
   onGoToSettled: () => void
   onGoToAllocations: () => void
@@ -39,6 +43,8 @@ export default function Dashboard({
   currency,
   profitAllocations,
   lastExportedAt,
+  reserveBufferEnabled,
+  reserveBufferPercent,
   onGoToActive,
   onGoToSettled,
   onGoToAllocations,
@@ -49,6 +55,13 @@ export default function Dashboard({
     () => computeTotals(trades, startingCash, profitAllocations),
     [trades, startingCash, profitAllocations]
   )
+
+  const reserveBufferAmount = useMemo(
+    () => reserveBuffer(startingCash, reserveBufferPercent),
+    [startingCash, reserveBufferPercent]
+  )
+  const reserveIntact = totals.cashAvailableForTrade >= reserveBufferAmount
+  const reserveShortfall = reserveBufferAmount - totals.cashAvailableForTrade
 
   const exportStatusText = describeLastExport(lastExportedAt)
   const daysSinceExport = useMemo(() => {
@@ -209,14 +222,47 @@ export default function Dashboard({
             sub={`${profitAllocations.length} allocation${profitAllocations.length === 1 ? '' : 's'} · withdrawals + stock buys`}
             tooltip="Sum of all Profit Allocation entries — money that has left the trading bankroll via withdrawal or stock purchase."
           />
-          <StatCard
-            label="Cash Available for Trade"
-            value={formatCurrency(totals.cashAvailableForTrade, currency)}
-            icon={<Wallet size={18} />}
-            accent={totals.cashAvailableForTrade >= 0 ? 'blue' : 'red'}
-            sub="The Bankroll · Starting Cash + Profit − Deployed"
-            tooltip="(Initial Starting Cash + Total Realized Profit) − Total Deployed. This is your actual, spendable trading bankroll."
-          />
+          <div
+            className={`stat-card transition ${totals.cashAvailableForTrade >= 0 ? 'hover:shadow-glow-blue' : 'hover:shadow-glow-red'}`}
+            title="(Initial Starting Cash + Total Realized Profit) − Total Deployed. This is your actual, spendable trading bankroll."
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Cash Safe For Deployment</span>
+              <div
+                className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                  totals.cashAvailableForTrade >= 0 ? 'text-accent bg-accent/10' : 'text-loss-glow bg-loss/10'
+                }`}
+              >
+                <Wallet size={18} />
+              </div>
+            </div>
+            <p className="font-mono text-2xl font-bold text-white">{formatCurrency(totals.cashAvailableForTrade, currency)}</p>
+            <p className="mt-1 text-xs text-slate-500">The Bankroll · Starting Cash + Profit − Deployed</p>
+
+            {reserveBufferEnabled && (
+              <div className="mt-3 border-t border-vault-700 pt-2">
+                <div className="flex items-center justify-between">
+                  <span className={`text-xs font-medium ${reserveIntact ? 'text-slate-400' : 'text-loss-glow'}`}>
+                    Reserve Buffer: {formatCurrency(reserveBufferAmount, currency)}
+                  </span>
+                  {reserveIntact ? (
+                    <span className="flex items-center gap-1 text-xs font-semibold text-profit-glow">
+                      <ShieldCheck size={13} /> Reserve Intact
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-xs font-semibold text-loss-glow">
+                      <TriangleAlert size={13} /> Reserve Breached
+                    </span>
+                  )}
+                </div>
+                {!reserveIntact && (
+                  <p className="mt-1 text-right text-xs font-mono text-loss-glow">
+                    Short by {formatCurrency(reserveShortfall, currency)}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

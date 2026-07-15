@@ -13,8 +13,15 @@
 - **Two-Bucket Profit Accounting** — the headline addition:
   - **Total Realized Profit** ("the Scoreboard") — cumulative gross P/L from all settled trades since inception. This number **never decreases** from withdrawals or stock purchases — it's your pure trading track record.
   - **Total Deployed** — sum of every entry in the Profit Allocation ledger (withdrawals + stock purchases).
-  - **Cash Available for Trade** ("the Bankroll") — `(Starting Cash + Total Realized Profit) − Total Deployed`. This is the actual spendable capital you have left to trade with.
+  - **Cash Safe For Deployment** ("the Bankroll") — `(Starting Cash + Total Realized Profit) − Total Deployed`. This is the actual spendable capital you have left to trade with.
   - All three are displayed together on the dashboard so you can see your gross performance vs. your real bankroll at a glance.
+- **Reserve Buffer** — an optional safety-net line embedded inside the Cash Safe For Deployment card (no extra dashboard cards or tabs added):
+  - `Reserve Buffer = Starting Cash × Reserve Buffer Percentage`
+  - Configurable in Settings: **Enable Reserve Buffer** (default ON) and **Reserve Buffer Percentage** (default 20%, range 0–50%).
+  - Status logic shown directly under the Bankroll figure:
+    - Cash Safe For Deployment ≥ Reserve Buffer → "✅ Reserve Intact" (normal styling).
+    - Cash Safe For Deployment < Reserve Buffer → "⚠ Reserve Breached" in red with a warning icon and "Short by $X".
+  - Purely informational — it never alters the underlying Total Realized Profit / Total Deployed / Bankroll math.
 - **Total Cash (Gross)** — starting cash + all realized cash flows from opened/closed trades (brokerage-style balance, includes collateral tied up in open positions).
 - **Global Portfolio Velocity** — a dollar-weighted, annualized return metric computed across *all* settled trades (return ÷ (capital deployed × days held), annualized to 365 days). This tells you how efficiently your capital compounds over time, not just your win rate.
 - **Win Rate**, **Open Exposure** (Credit vs. Debit), **Open Strategy Mix**, and a **Realized Equity Curve** chart (Chart.js).
@@ -92,19 +99,22 @@ interface AppData {
     startingCash: number
     displayCurrency: string
     lastExportedAt?: string                 // ISO timestamp of last JSON export
+    reserveBufferEnabled: boolean           // default true
+    reserveBufferPercent: number            // default 20 (0-50 valid range)
   }
 }
 ```
 
 ### The Two-Bucket Profit Formulas
 ```
-Total Realized Profit  = Σ realizedPL(trade) for every settled trade      // the Scoreboard — cumulative, never decreases
-Total Deployed         = Σ amount for every entry in profitAllocations[]  // the Deployment ledger
-Cash Available for Trade = (Starting Cash + Total Realized Profit) − Total Deployed   // the actual Bankroll
+Total Realized Profit    = Σ realizedPL(trade) for every settled trade      // the Scoreboard — cumulative, never decreases
+Total Deployed           = Σ amount for every entry in profitAllocations[]  // the Deployment ledger
+Cash Safe For Deployment = (Starting Cash + Total Realized Profit) − Total Deployed   // the actual Bankroll
+Reserve Buffer           = Starting Cash × Reserve Buffer Percentage        // safety-net line, display-only
 ```
 
 ## Storage
-- **Engine**: Browser `localStorage`, key `option-vault:data:v1` (schema version 2 — auto-migrates from version 1 saves by defaulting `profitAllocations` to `[]`).
+- **Engine**: Browser `localStorage`, key `option-vault:data:v1` (schema version 2 — auto-migrates from version 1 saves by defaulting `profitAllocations` to `[]`, and defaults `reserveBufferEnabled`/`reserveBufferPercent` to `true`/`20` for any save or JSON import that predates the Reserve Buffer feature).
 - **No servers, no databases, no third-party APIs.** This is intentional — 100% offline-capable after first load (aside from CDN font/icon assets).
 
 ## User Guide
@@ -114,11 +124,12 @@ Cash Available for Trade = (Starting Cash + Total Realized Profit) − Total Dep
 4. When a position resolves, click the ✅ icon to **Settle** it — choose Closed/Expired/Assigned, enter the closing premium/fees, and confirm.
 5. Review settled history in the **Settled Archive**. Made a mistake? Hit **Undo** to reopen it.
 6. When you withdraw profit or buy stock with it, go to the **Profit Allocation** tab and record it — this keeps your Scoreboard intact while accurately tracking your remaining Bankroll.
-7. Check the **Portfolio Vault** dashboard anytime to see your Total Realized Profit, Total Deployed, and Cash Available for Trade side by side.
-8. Go to **Settings** (gear icon) regularly to **Export to JSON** as a backup, or **Import from JSON** to restore/migrate data. The dashboard will nag you with a banner if it's been 7+ days since your last export.
+7. Check the **Portfolio Vault** dashboard anytime to see your Total Realized Profit, Total Deployed, and Cash Safe For Deployment side by side — plus your Reserve Buffer status right underneath it.
+8. Go to **Settings** (gear icon) regularly to **Export to JSON** as a backup, or **Import from JSON** to restore/migrate data. The dashboard will nag you with a banner if it's been 7+ days since your last export. The same panel lets you toggle the Reserve Buffer on/off and set its percentage (0–50%).
 
 ## Deployment
 - **Platform**: Cloudflare Pages
+- **GitHub**: https://github.com/durgelle-bit/Lazy-Option-Tracker
 - **Tech Stack**: React 18 + TypeScript + Vite + Tailwind CSS + Chart.js + lucide-react icons
 - **Status**: Ready to deploy (static SPA — no Workers backend required)
-- **Last Updated**: 2026-07-08
+- **Last Updated**: 2026-07-15

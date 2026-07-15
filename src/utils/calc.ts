@@ -178,6 +178,16 @@ export function cashAvailableForTrade(startingCash: number, realizedProfit: numb
   return startingCash + realizedProfit - deployed
 }
 
+/**
+ * Reserve Buffer — a slice of Starting Cash held aside as a safety net.
+ * Formula: Starting Cash × Reserve Buffer Percentage.
+ * This is purely informational/display math and never feeds back into the
+ * two-bucket accounting model (Scoreboard / Deployment / Bankroll).
+ */
+export function reserveBuffer(startingCash: number, reserveBufferPercent: number): number {
+  return startingCash * (reserveBufferPercent / 100)
+}
+
 export function formatCurrency(n: number, currency = 'USD'): string {
   const sign = n < 0 ? '-' : ''
   const abs = Math.abs(n)

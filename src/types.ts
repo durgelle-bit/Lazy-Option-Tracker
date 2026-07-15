@@ -34,6 +34,10 @@ export interface AppSettings {
   displayCurrency: string
   /** ISO timestamp of the last successful "Export to JSON" action. Undefined if never exported. */
   lastExportedAt?: string
+  /** Whether the Reserve Buffer safety-net feature is enabled. Default: true. */
+  reserveBufferEnabled: boolean
+  /** Percentage (0-50) of Starting Cash held aside as a Reserve Buffer. Default: 20. */
+  reserveBufferPercent: number
 }
 
 /** Category for a use of realized profits — money leaving the trading bankroll. */

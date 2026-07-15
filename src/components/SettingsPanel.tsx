@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { AppData } from '../types'
 import { exportToFile, importFromFile, describeLastExport } from '../utils/storage'
-import { X, Download, Upload, Save, AlertTriangle, Trash2, Settings as SettingsIcon, Clock } from 'lucide-react'
+import { X, Download, Upload, Save, AlertTriangle, Trash2, Settings as SettingsIcon, Clock, ShieldCheck } from 'lucide-react'
 import ModalShell from './ModalShell'
 import ConfirmDialog from './ConfirmDialog'
 
@@ -9,7 +9,12 @@ interface Props {
   data: AppData
   onClose: () => void
   onImport: (data: AppData) => void
-  onUpdateSettings: (startingCash: number, displayCurrency: string) => void
+  onUpdateSettings: (
+    startingCash: number,
+    displayCurrency: string,
+    reserveBufferEnabled: boolean,
+    reserveBufferPercent: number
+  ) => void
   onFactoryReset: () => void
   onExported: () => void
   onToast: (msg: string, type?: 'success' | 'error' | 'info') => void
@@ -20,6 +25,8 @@ const CURRENCIES = ['USD', 'SGD', 'EUR', 'GBP', 'AUD', 'HKD', 'JPY']
 export default function SettingsPanel({ data, onClose, onImport, onUpdateSettings, onFactoryReset, onExported, onToast }: Props) {
   const [startingCash, setStartingCash] = useState(String(data.settings.startingCash))
   const [currency, setCurrency] = useState(data.settings.displayCurrency)
+  const [reserveBufferEnabled, setReserveBufferEnabled] = useState(data.settings.reserveBufferEnabled)
+  const [reserveBufferPercent, setReserveBufferPercent] = useState(String(data.settings.reserveBufferPercent))
   const [confirmReset, setConfirmReset] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -29,7 +36,12 @@ export default function SettingsPanel({ data, onClose, onImport, onUpdateSetting
       onToast('Starting cash must be a valid non-negative number.', 'error')
       return
     }
-    onUpdateSettings(cash, currency)
+    const percent = parseFloat(reserveBufferPercent)
+    if (isNaN(percent) || percent < 0 || percent > 50) {
+      onToast('Reserve Buffer Percentage must be between 0 and 50.', 'error')
+      return
+    }
+    onUpdateSettings(cash, currency, reserveBufferEnabled, percent)
   }
 
   function handleExport() {
@@ -94,6 +106,47 @@ export default function SettingsPanel({ data, onClose, onImport, onUpdateSetting
                 </select>
               </div>
             </div>
+
+            <div className="mt-4 rounded-lg border border-vault-700 bg-vault-850 p-3">
+              <div className="flex items-center justify-between">
+                <label htmlFor="reserve-buffer-toggle" className="flex items-center gap-1.5 text-sm font-medium text-slate-300">
+                  <ShieldCheck size={14} className="text-accent" /> Enable Reserve Buffer
+                </label>
+                <button
+                  id="reserve-buffer-toggle"
+                  type="button"
+                  role="switch"
+                  aria-checked={reserveBufferEnabled}
+                  onClick={() => setReserveBufferEnabled((v) => !v)}
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+                    reserveBufferEnabled ? 'bg-accent' : 'bg-vault-700'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition ${
+                      reserveBufferEnabled ? 'left-5' : 'left-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Reserves a slice of your Starting Cash as a safety net, tracked against your Cash Safe For Deployment.
+              </p>
+              <div className={`mt-3 ${reserveBufferEnabled ? '' : 'opacity-40'}`}>
+                <label className="label-field">Reserve Buffer Percentage (0–50%)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={50}
+                  step={1}
+                  value={reserveBufferPercent}
+                  disabled={!reserveBufferEnabled}
+                  onChange={(e) => setReserveBufferPercent(e.target.value)}
+                  className="input-field font-mono"
+                />
+              </div>
+            </div>
+
             <button onClick={handleSaveSettings} className="btn-primary mt-3 w-full">
               <Save size={16} /> Save Settings
             </button>
