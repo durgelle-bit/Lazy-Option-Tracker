@@ -188,6 +188,21 @@ export function reserveBuffer(startingCash: number, reserveBufferPercent: number
   return startingCash * (reserveBufferPercent / 100)
 }
 
+/**
+ * Cash Safe For Deployment — the Bankroll with the Reserve Buffer already
+ * carved out. This is the headline figure shown on the dashboard: the money
+ * you can actually put into a new position without dipping into your safety net.
+ * Formula: Cash Available For Trade (the Bankroll) − Reserve Buffer (when enabled).
+ * When the Reserve Buffer is disabled, this simply equals the Bankroll.
+ */
+export function cashSafeForDeployment(
+  bankroll: number,
+  reserveBufferAmount: number,
+  reserveBufferEnabled: boolean
+): number {
+  return reserveBufferEnabled ? bankroll - reserveBufferAmount : bankroll
+}
+
 export function formatCurrency(n: number, currency = 'USD'): string {
   const sign = n < 0 ? '-' : ''
   const abs = Math.abs(n)

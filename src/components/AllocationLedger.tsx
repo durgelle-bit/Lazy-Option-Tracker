@@ -116,7 +116,7 @@ export default function AllocationLedger({
       </div>
 
       <div className="rounded-xl border border-vault-700 bg-vault-850 px-4 py-3 text-xs text-slate-500">
-        <strong className="text-slate-400">Formula:</strong> Cash Safe For Deployment = (Starting Cash{' '}
+        <strong className="text-slate-400">Formula:</strong> Cash Available for Trade = (Starting Cash{' '}
         <span className="text-slate-400">+</span> Total Realized Profit <span className="font-mono text-profit-glow">{formatCurrency(realizedProfit, currency)}</span>){' '}
         <span className="text-slate-400">−</span> Total Deployed{' '}
         <span className="font-mono text-gold-glow">{formatCurrency(deployed, currency)}</span> ={' '}

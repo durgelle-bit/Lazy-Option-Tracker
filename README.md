@@ -13,15 +13,16 @@
 - **Two-Bucket Profit Accounting** — the headline addition:
   - **Total Realized Profit** ("the Scoreboard") — cumulative gross P/L from all settled trades since inception. This number **never decreases** from withdrawals or stock purchases — it's your pure trading track record.
   - **Total Deployed** — sum of every entry in the Profit Allocation ledger (withdrawals + stock purchases).
-  - **Cash Safe For Deployment** ("the Bankroll") — `(Starting Cash + Total Realized Profit) − Total Deployed`. This is the actual spendable capital you have left to trade with.
-  - All three are displayed together on the dashboard so you can see your gross performance vs. your real bankroll at a glance.
-- **Reserve Buffer** — an optional safety-net line embedded inside the Cash Safe For Deployment card (no extra dashboard cards or tabs added):
+  - **Cash Safe For Deployment** ("the headline Bankroll figure") — `(Starting Cash + Total Realized Profit) − Total Deployed − Reserve Buffer`. This is the actual spendable capital you have left to trade with, already net of your safety-net reserve.
+  - All three are displayed together on the dashboard so you can see your gross performance vs. your real, reserve-adjusted bankroll at a glance.
+- **Reserve Buffer** — an optional safety-net carve-out embedded inside the Cash Safe For Deployment card (no extra dashboard cards or tabs added):
   - `Reserve Buffer = Starting Cash × Reserve Buffer Percentage`
   - Configurable in Settings: **Enable Reserve Buffer** (default ON) and **Reserve Buffer Percentage** (default 20%, range 0–50%).
-  - Status logic shown directly under the Bankroll figure:
-    - Cash Safe For Deployment ≥ Reserve Buffer → "✅ Reserve Intact" (normal styling).
-    - Cash Safe For Deployment < Reserve Buffer → "⚠ Reserve Breached" in red with a warning icon and "Short by $X".
-  - Purely informational — it never alters the underlying Total Realized Profit / Total Deployed / Bankroll math.
+  - When enabled, the Reserve Buffer is subtracted from the Bankroll to produce the Cash Safe For Deployment figure shown as the card's headline value — so the number you see is what you can safely trade with *after* setting the reserve aside.
+  - Status logic shown directly under that figure:
+    - Cash Safe For Deployment ≥ $0 → "✅ Reserve Intact" (normal styling) — your reserve is fully covered.
+    - Cash Safe For Deployment < $0 → "⚠ Reserve Breached" in red with a warning icon and "Short by $X" — you'd be dipping into the reserve to trade further.
+  - Purely informational/derived math on top of the display layer — it never alters the underlying Total Realized Profit / Total Deployed / raw Bankroll formulas.
 - **Total Cash (Gross)** — starting cash + all realized cash flows from opened/closed trades (brokerage-style balance, includes collateral tied up in open positions).
 - **Global Portfolio Velocity** — a dollar-weighted, annualized return metric computed across *all* settled trades (return ÷ (capital deployed × days held), annualized to 365 days). This tells you how efficiently your capital compounds over time, not just your win rate.
 - **Win Rate**, **Open Exposure** (Credit vs. Debit), **Open Strategy Mix**, and a **Realized Equity Curve** chart (Chart.js).
@@ -109,8 +110,9 @@ interface AppData {
 ```
 Total Realized Profit    = Σ realizedPL(trade) for every settled trade      // the Scoreboard — cumulative, never decreases
 Total Deployed           = Σ amount for every entry in profitAllocations[]  // the Deployment ledger
-Cash Safe For Deployment = (Starting Cash + Total Realized Profit) − Total Deployed   // the actual Bankroll
-Reserve Buffer           = Starting Cash × Reserve Buffer Percentage        // safety-net line, display-only
+Cash Available for Trade = (Starting Cash + Total Realized Profit) − Total Deployed   // the raw Bankroll
+Reserve Buffer            = Starting Cash × Reserve Buffer Percentage                 // safety-net carve-out
+Cash Safe For Deployment  = Cash Available for Trade − Reserve Buffer (when enabled)  // dashboard headline figure
 ```
 
 ## Storage
@@ -124,7 +126,7 @@ Reserve Buffer           = Starting Cash × Reserve Buffer Percentage        // 
 4. When a position resolves, click the ✅ icon to **Settle** it — choose Closed/Expired/Assigned, enter the closing premium/fees, and confirm.
 5. Review settled history in the **Settled Archive**. Made a mistake? Hit **Undo** to reopen it.
 6. When you withdraw profit or buy stock with it, go to the **Profit Allocation** tab and record it — this keeps your Scoreboard intact while accurately tracking your remaining Bankroll.
-7. Check the **Portfolio Vault** dashboard anytime to see your Total Realized Profit, Total Deployed, and Cash Safe For Deployment side by side — plus your Reserve Buffer status right underneath it.
+7. Check the **Portfolio Vault** dashboard anytime to see your Total Realized Profit, Total Deployed, and Cash Safe For Deployment (your Bankroll, net of the Reserve Buffer) side by side — plus your Reserve Intact/Breached status right underneath it.
 8. Go to **Settings** (gear icon) regularly to **Export to JSON** as a backup, or **Import from JSON** to restore/migrate data. The dashboard will nag you with a banner if it's been 7+ days since your last export. The same panel lets you toggle the Reserve Buffer on/off and set its percentage (0–50%).
 
 ## Deployment

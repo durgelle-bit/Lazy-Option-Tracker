@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useEffect } from 'react'
 import { ProfitAllocation, Trade } from '../types'
-import { computeTotals, formatCurrency, formatPercent, isCredit, realizedPL, reserveBuffer } from '../utils/calc'
+import { cashSafeForDeployment, computeTotals, formatCurrency, formatPercent, isCredit, realizedPL, reserveBuffer } from '../utils/calc'
 import { describeLastExport } from '../utils/storage'
 import {
   Wallet,
@@ -60,8 +60,15 @@ export default function Dashboard({
     () => reserveBuffer(startingCash, reserveBufferPercent),
     [startingCash, reserveBufferPercent]
   )
-  const reserveIntact = totals.cashAvailableForTrade >= reserveBufferAmount
-  const reserveShortfall = reserveBufferAmount - totals.cashAvailableForTrade
+  // The headline Bankroll figure, net of the Reserve Buffer when the feature is enabled.
+  const cashSafe = useMemo(
+    () => cashSafeForDeployment(totals.cashAvailableForTrade, reserveBufferAmount, reserveBufferEnabled),
+    [totals.cashAvailableForTrade, reserveBufferAmount, reserveBufferEnabled]
+  )
+  // Reserve is "intact" as long as the Bankroll still covers the full Reserve Buffer
+  // after deployable cash is set aside — i.e. Cash Safe For Deployment hasn't gone negative.
+  const reserveIntact = cashSafe >= 0
+  const reserveShortfall = -cashSafe
 
   const exportStatusText = describeLastExport(lastExportedAt)
   const daysSinceExport = useMemo(() => {
@@ -223,21 +230,27 @@ export default function Dashboard({
             tooltip="Sum of all Profit Allocation entries — money that has left the trading bankroll via withdrawal or stock purchase."
           />
           <div
-            className={`stat-card transition ${totals.cashAvailableForTrade >= 0 ? 'hover:shadow-glow-blue' : 'hover:shadow-glow-red'}`}
-            title="(Initial Starting Cash + Total Realized Profit) − Total Deployed. This is your actual, spendable trading bankroll."
+            className={`stat-card transition ${cashSafe >= 0 ? 'hover:shadow-glow-blue' : 'hover:shadow-glow-red'}`}
+            title={
+              reserveBufferEnabled
+                ? '(Initial Starting Cash + Total Realized Profit) − Total Deployed − Reserve Buffer. This is your spendable trading bankroll after setting aside your safety net.'
+                : '(Initial Starting Cash + Total Realized Profit) − Total Deployed. This is your actual, spendable trading bankroll.'
+            }
           >
             <div className="mb-3 flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Cash Safe For Deployment</span>
               <div
                 className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-                  totals.cashAvailableForTrade >= 0 ? 'text-accent bg-accent/10' : 'text-loss-glow bg-loss/10'
+                  cashSafe >= 0 ? 'text-accent bg-accent/10' : 'text-loss-glow bg-loss/10'
                 }`}
               >
                 <Wallet size={18} />
               </div>
             </div>
-            <p className="font-mono text-2xl font-bold text-white">{formatCurrency(totals.cashAvailableForTrade, currency)}</p>
-            <p className="mt-1 text-xs text-slate-500">The Bankroll · Starting Cash + Profit − Deployed</p>
+            <p className="font-mono text-2xl font-bold text-white">{formatCurrency(cashSafe, currency)}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {reserveBufferEnabled ? 'The Bankroll − Reserve Buffer' : 'The Bankroll · Starting Cash + Profit − Deployed'}
+            </p>
 
             {reserveBufferEnabled && (
               <div className="mt-3 border-t border-vault-700 pt-2">
