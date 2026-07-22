@@ -93,6 +93,15 @@ export interface PortfolioTotals {
   cashAvailableForTrade: number
   openCreditExposure: number
   openDebitExposure: number
+  /** Total capital currently tied up as collateral/premium in open positions: openCreditExposure + openDebitExposure. */
+  openExposureTotal: number
+  /**
+   * Unrealized Profit — total net premium collected (credit received, net of opening fees)
+   * from currently OPEN credit-strategy positions. This is the profit you'd bank if every
+   * open credit position expired worthless today. Debit strategies pay premium rather than
+   * collect it, so they don't contribute here. Purely informational until a trade settles.
+   */
+  unrealizedProfit: number
   openPositionsCount: number
   closedPositionsCount: number
   winRate: number
@@ -108,6 +117,7 @@ export function computeTotals(
   let realizedProfit = 0
   let openCreditExposure = 0
   let openDebitExposure = 0
+  let unrealizedProfit = 0
   let openPositionsCount = 0
   let closedPositionsCount = 0
   let wins = 0
@@ -119,8 +129,13 @@ export function computeTotals(
     cash += openCashFlow(t)
     if (t.status === 'Open') {
       openPositionsCount++
-      if (isCredit(t.strategy)) openCreditExposure += capitalAtRisk(t)
-      else openDebitExposure += capitalAtRisk(t)
+      if (isCredit(t.strategy)) {
+        openCreditExposure += capitalAtRisk(t)
+        // Net premium already collected on this open credit position.
+        unrealizedProfit += maxPotentialProfit(t)
+      } else {
+        openDebitExposure += capitalAtRisk(t)
+      }
     } else {
       cash += closeCashFlow(t)
       const pl = realizedPL(t)
@@ -152,6 +167,8 @@ export function computeTotals(
     cashAvailableForTrade: bankroll,
     openCreditExposure,
     openDebitExposure,
+    openExposureTotal: openCreditExposure + openDebitExposure,
+    unrealizedProfit,
     openPositionsCount,
     closedPositionsCount,
     winRate,
@@ -189,18 +206,21 @@ export function reserveBuffer(startingCash: number, reserveBufferPercent: number
 }
 
 /**
- * Cash Safe For Deployment — the Bankroll with the Reserve Buffer already
- * carved out. This is the headline figure shown on the dashboard: the money
- * you can actually put into a new position without dipping into your safety net.
- * Formula: Cash Available For Trade (the Bankroll) − Reserve Buffer (when enabled).
- * When the Reserve Buffer is disabled, this simply equals the Bankroll.
+ * Cash Safe For Deployment — the Bankroll with the Reserve Buffer and all
+ * capital currently tied up in open positions already carved out. This is
+ * the headline figure shown on the dashboard: the money you can actually
+ * put into a brand-new position right now, without dipping into your
+ * safety net or double-counting collateral that's already at work.
+ * Formula: Cash Available For Trade (the Bankroll) − Reserve Buffer (when enabled) − Open Exposure.
  */
 export function cashSafeForDeployment(
   bankroll: number,
   reserveBufferAmount: number,
-  reserveBufferEnabled: boolean
+  reserveBufferEnabled: boolean,
+  openExposureTotal: number
 ): number {
-  return reserveBufferEnabled ? bankroll - reserveBufferAmount : bankroll
+  const afterReserve = reserveBufferEnabled ? bankroll - reserveBufferAmount : bankroll
+  return afterReserve - openExposureTotal
 }
 
 export function formatCurrency(n: number, currency = 'USD'): string {

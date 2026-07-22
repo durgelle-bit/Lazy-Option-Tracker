@@ -13,12 +13,13 @@
 - **Two-Bucket Profit Accounting** — the headline addition:
   - **Total Realized Profit** ("the Scoreboard") — cumulative gross P/L from all settled trades since inception. This number **never decreases** from withdrawals or stock purchases — it's your pure trading track record.
   - **Total Deployed** — sum of every entry in the Profit Allocation ledger (withdrawals + stock purchases).
-  - **Cash Safe For Deployment** ("the headline Bankroll figure") — `(Starting Cash + Total Realized Profit) − Total Deployed − Reserve Buffer`. This is the actual spendable capital you have left to trade with, already net of your safety-net reserve.
-  - All three are displayed together on the dashboard so you can see your gross performance vs. your real, reserve-adjusted bankroll at a glance.
+  - **Cash Safe For Deployment** ("the headline Bankroll figure") — `(Starting Cash + Total Realized Profit) − Total Deployed − Reserve Buffer − Open Exposure`. This is the actual spendable capital you have left to commit to a brand-new position right now, net of your safety-net reserve *and* the capital already tied up in open trades.
+  - **Unrealized Profit** — total net premium already collected from currently OPEN credit-strategy positions (the profit you'd bank if every open credit position expired worthless today). Not yet part of Total Realized Profit until each trade settles.
+  - All figures are displayed together on the dashboard so you can see your gross performance, your open-position profit still in flight, and your real, fully-adjusted bankroll at a glance.
 - **Reserve Buffer** — an optional safety-net carve-out embedded inside the Cash Safe For Deployment card (no extra dashboard cards or tabs added):
   - `Reserve Buffer = Starting Cash × Reserve Buffer Percentage`
   - Configurable in Settings: **Enable Reserve Buffer** (default ON) and **Reserve Buffer Percentage** (default 20%, range 0–50%).
-  - When enabled, the Reserve Buffer is subtracted from the Bankroll to produce the Cash Safe For Deployment figure shown as the card's headline value — so the number you see is what you can safely trade with *after* setting the reserve aside.
+  - When enabled, the Reserve Buffer (plus Open Exposure) is subtracted from the raw Bankroll to produce the Cash Safe For Deployment figure shown as the card's headline value — so the number you see is what you can safely commit to a *new* trade after setting the reserve aside and excluding capital already at work.
   - Status logic shown directly under that figure:
     - Cash Safe For Deployment ≥ $0 → "✅ Reserve Intact" (normal styling) — your reserve is fully covered.
     - Cash Safe For Deployment < $0 → "⚠ Reserve Breached" in red with a warning icon and "Short by $X" — you'd be dipping into the reserve to trade further.
@@ -108,11 +109,13 @@ interface AppData {
 
 ### The Two-Bucket Profit Formulas
 ```
-Total Realized Profit    = Σ realizedPL(trade) for every settled trade      // the Scoreboard — cumulative, never decreases
-Total Deployed           = Σ amount for every entry in profitAllocations[]  // the Deployment ledger
-Cash Available for Trade = (Starting Cash + Total Realized Profit) − Total Deployed   // the raw Bankroll
-Reserve Buffer            = Starting Cash × Reserve Buffer Percentage                 // safety-net carve-out
-Cash Safe For Deployment  = Cash Available for Trade − Reserve Buffer (when enabled)  // dashboard headline figure
+Total Realized Profit    = Σ realizedPL(trade) for every settled trade                // the Scoreboard — cumulative, never decreases
+Unrealized Profit         = Σ maxPotentialProfit(trade) for every OPEN credit trade     // premium already collected, not yet settled
+Total Deployed            = Σ amount for every entry in profitAllocations[]              // the Deployment ledger
+Cash Available for Trade  = (Starting Cash + Total Realized Profit) − Total Deployed     // the raw Bankroll
+Reserve Buffer            = Starting Cash × Reserve Buffer Percentage                    // safety-net carve-out
+Open Exposure             = Open Credit Exposure + Open Debit Exposure                   // capital tied up in open trades
+Cash Safe For Deployment  = Cash Available for Trade − Reserve Buffer (when enabled) − Open Exposure  // dashboard headline figure
 ```
 
 ## Storage
@@ -126,7 +129,7 @@ Cash Safe For Deployment  = Cash Available for Trade − Reserve Buffer (when en
 4. When a position resolves, click the ✅ icon to **Settle** it — choose Closed/Expired/Assigned, enter the closing premium/fees, and confirm.
 5. Review settled history in the **Settled Archive**. Made a mistake? Hit **Undo** to reopen it.
 6. When you withdraw profit or buy stock with it, go to the **Profit Allocation** tab and record it — this keeps your Scoreboard intact while accurately tracking your remaining Bankroll.
-7. Check the **Portfolio Vault** dashboard anytime to see your Total Realized Profit, Total Deployed, and Cash Safe For Deployment (your Bankroll, net of the Reserve Buffer) side by side — plus your Reserve Intact/Breached status right underneath it.
+7. Check the **Portfolio Vault** dashboard anytime to see your Total Realized Profit, Unrealized Profit (still in flight on open positions), Total Deployed, and Cash Safe For Deployment (your Bankroll, net of the Reserve Buffer and capital already tied up in open trades) side by side — plus your Reserve Intact/Breached status right underneath the headline figure.
 8. Go to **Settings** (gear icon) regularly to **Export to JSON** as a backup, or **Import from JSON** to restore/migrate data. The dashboard will nag you with a banner if it's been 7+ days since your last export. The same panel lets you toggle the Reserve Buffer on/off and set its percentage (0–50%).
 
 ## Deployment

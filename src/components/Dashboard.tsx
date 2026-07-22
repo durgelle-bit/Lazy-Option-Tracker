@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   TriangleAlert,
   ShieldCheck,
+  Hourglass,
 } from 'lucide-react'
 import Chart from 'chart.js/auto'
 
@@ -60,10 +61,16 @@ export default function Dashboard({
     () => reserveBuffer(startingCash, reserveBufferPercent),
     [startingCash, reserveBufferPercent]
   )
-  // The headline Bankroll figure, net of the Reserve Buffer when the feature is enabled.
+  // The headline Bankroll figure, net of the Reserve Buffer and capital already tied up in open positions.
   const cashSafe = useMemo(
-    () => cashSafeForDeployment(totals.cashAvailableForTrade, reserveBufferAmount, reserveBufferEnabled),
-    [totals.cashAvailableForTrade, reserveBufferAmount, reserveBufferEnabled]
+    () =>
+      cashSafeForDeployment(
+        totals.cashAvailableForTrade,
+        reserveBufferAmount,
+        reserveBufferEnabled,
+        totals.openExposureTotal
+      ),
+    [totals.cashAvailableForTrade, reserveBufferAmount, reserveBufferEnabled, totals.openExposureTotal]
   )
   // Reserve is "intact" as long as the Bankroll still covers the full Reserve Buffer
   // after deployable cash is set aside — i.e. Cash Safe For Deployment hasn't gone negative.
@@ -212,7 +219,7 @@ export default function Dashboard({
             <Landmark size={12} /> Manage Allocations
           </button>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             label="Total Realized Profit"
             value={formatCurrency(totals.realizedProfit, currency)}
@@ -220,6 +227,14 @@ export default function Dashboard({
             accent={totals.realizedProfit >= 0 ? 'green' : 'red'}
             sub="The Scoreboard · cumulative since inception, never reduced"
             tooltip="Gross accumulated profit from all settled trades. This figure only ever grows with trading performance — withdrawals and stock purchases never touch it."
+          />
+          <StatCard
+            label="Unrealized Profit"
+            value={formatCurrency(totals.unrealizedProfit, currency)}
+            icon={<Hourglass size={18} />}
+            accent={totals.unrealizedProfit >= 0 ? 'green' : 'red'}
+            sub={`${totals.openPositionsCount} open position${totals.openPositionsCount === 1 ? '' : 's'} · premium collected, not yet settled`}
+            tooltip="Total net premium already collected from currently OPEN credit-strategy positions — the profit you'd bank if every open credit position expired worthless today. Not yet part of Total Realized Profit until each trade settles."
           />
           <StatCard
             label="Total Deployed"
@@ -233,8 +248,8 @@ export default function Dashboard({
             className={`stat-card transition ${cashSafe >= 0 ? 'hover:shadow-glow-blue' : 'hover:shadow-glow-red'}`}
             title={
               reserveBufferEnabled
-                ? '(Initial Starting Cash + Total Realized Profit) − Total Deployed − Reserve Buffer. This is your spendable trading bankroll after setting aside your safety net.'
-                : '(Initial Starting Cash + Total Realized Profit) − Total Deployed. This is your actual, spendable trading bankroll.'
+                ? 'Bankroll − Reserve Buffer − Open Exposure. This is the cash you can actually commit to a brand-new position right now, after setting aside your safety net and capital already tied up in open trades.'
+                : 'Bankroll − Open Exposure. This is the cash you can actually commit to a brand-new position right now, after excluding capital already tied up in open trades.'
             }
           >
             <div className="mb-3 flex items-center justify-between">
@@ -249,7 +264,7 @@ export default function Dashboard({
             </div>
             <p className="font-mono text-2xl font-bold text-white">{formatCurrency(cashSafe, currency)}</p>
             <p className="mt-1 text-xs text-slate-500">
-              {reserveBufferEnabled ? 'The Bankroll − Reserve Buffer' : 'The Bankroll · Starting Cash + Profit − Deployed'}
+              {reserveBufferEnabled ? 'Bankroll − Reserve − Open Exposure' : 'Bankroll − Open Exposure'}
             </p>
 
             {reserveBufferEnabled && (
