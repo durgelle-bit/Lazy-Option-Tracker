@@ -83,7 +83,11 @@ export function annualizedExpectedReturn(t: Trade): number | null {
 }
 
 export interface PortfolioTotals {
-  /** Gross brokerage-style cash balance including collateral tied up by open positions. */
+  /**
+   * Brokerage-style cash balance including collateral tied up by open positions,
+   * net of everything already withdrawn/deployed out of the account (Total Deployed).
+   * This does NOT double-subtract Total Deployed — it is deducted here exactly once.
+   */
   totalCash: number
   /** The 'Scoreboard': cumulative gross realized profit since inception. Never reduced by withdrawals/purchases. */
   realizedProfit: number
@@ -161,7 +165,10 @@ export function computeTotals(
   const bankroll = cashAvailableForTrade(startingCash, realizedProfit, deployed)
 
   return {
-    totalCash: cash,
+    // Cash physically in the account = gross trading cash flows minus whatever has
+    // already been withdrawn or spent (Total Deployed). Money that's been deployed
+    // out of the account is not sitting in cash anymore, so it must not be counted twice.
+    totalCash: cash - deployed,
     realizedProfit,
     totalDeployed: deployed,
     cashAvailableForTrade: bankroll,

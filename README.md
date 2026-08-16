@@ -24,7 +24,7 @@
     - Cash Safe For Deployment ≥ $0 → "✅ Reserve Intact" (normal styling) — your reserve is fully covered.
     - Cash Safe For Deployment < $0 → "⚠ Reserve Breached" in red with a warning icon and "Short by $X" — you'd be dipping into the reserve to trade further.
   - Purely informational/derived math on top of the display layer — it never alters the underlying Total Realized Profit / Total Deployed / raw Bankroll formulas.
-- **Total Cash (Gross)** — starting cash + all realized cash flows from opened/closed trades (brokerage-style balance, includes collateral tied up in open positions).
+- **Total Cash** — starting cash + all realized cash flows from opened/closed trades, minus Total Deployed (brokerage-style balance, includes collateral tied up in open positions, net of anything already withdrawn or spent).
 - **Global Portfolio Velocity** — a dollar-weighted, annualized return metric computed across *all* settled trades (return ÷ (capital deployed × days held), annualized to 365 days). This tells you how efficiently your capital compounds over time, not just your win rate.
 - **Win Rate**, **Open Exposure** (Credit vs. Debit), **Open Strategy Mix**, and a **Realized Equity Curve** chart (Chart.js).
 - **Last Export tracker** — a dedicated stat card plus a dismiss-free banner that appears once your JSON backup is 7+ days old (or you've never exported), nudging you back to Settings.

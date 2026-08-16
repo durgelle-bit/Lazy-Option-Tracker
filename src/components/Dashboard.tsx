@@ -297,12 +297,12 @@ export default function Dashboard({
       {/* Top Stat Grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          label="Total Cash (Gross)"
+          label="Total Cash"
           value={formatCurrency(totals.totalCash, currency)}
           icon={<PiggyBank size={18} />}
           accent="blue"
           sub={`Starting: ${formatCurrency(startingCash, currency)}`}
-          tooltip="Brokerage-style running cash balance including capital tied up as collateral in open positions. Distinct from your bankroll above."
+          tooltip="Brokerage-style running cash balance including capital tied up as collateral in open positions, net of everything already withdrawn or deployed out of the account. Distinct from your bankroll above."
         />
         <StatCard
           label="Global Portfolio Velocity"
