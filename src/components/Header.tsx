@@ -1,7 +1,7 @@
 import React from 'react'
-import { LayoutDashboard, ListChecks, Archive, Settings, Plus, ShieldCheck, Landmark } from 'lucide-react'
+import { LayoutDashboard, ListChecks, Archive, Settings, Plus, ShieldCheck, Landmark, Boxes } from 'lucide-react'
 
-type View = 'dashboard' | 'active' | 'settled' | 'allocations'
+type View = 'dashboard' | 'active' | 'settled' | 'allocations' | 'securities'
 
 interface Props {
   view: View
@@ -11,6 +11,7 @@ interface Props {
   activeCount: number
   settledCount: number
   allocationCount: number
+  securitiesCount: number
 }
 
 export default function Header({
@@ -21,11 +22,13 @@ export default function Header({
   activeCount,
   settledCount,
   allocationCount,
+  securitiesCount,
 }: Props) {
   const navItems: { key: View; label: string; icon: React.ReactNode; count?: number }[] = [
     { key: 'dashboard', label: 'Portfolio Vault', icon: <LayoutDashboard size={16} /> },
     { key: 'active', label: 'Option Ledger', icon: <ListChecks size={16} />, count: activeCount },
     { key: 'settled', label: 'Settled Archive', icon: <Archive size={16} />, count: settledCount },
+    { key: 'securities', label: 'Assigned Securities', icon: <Boxes size={16} />, count: securitiesCount },
     { key: 'allocations', label: 'Profit Allocation', icon: <Landmark size={16} />, count: allocationCount },
   ]
 

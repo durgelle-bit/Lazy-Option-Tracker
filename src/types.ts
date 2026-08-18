@@ -87,3 +87,36 @@ export const ALL_STRATEGIES: StrategyType[] = [...CREDIT_STRATEGIES, ...DEBIT_ST
 export const STATUS_OPTIONS: TradeStatus[] = ['Open', 'Closed', 'Expired', 'Assigned']
 
 export const CLOSE_STATUS_OPTIONS: TradeStatus[] = ['Closed', 'Expired', 'Assigned']
+
+/** Short-put strategies that, if Assigned, obligate you to buy 100 shares/contract at the strike. */
+export const SHORT_PUT_STRATEGIES: StrategyType[] = ['Cash-Secured Put', 'Naked Put']
+
+/**
+ * A lot of shares acquired via put assignment, and available to be used as collateral
+ * for writing Covered Calls. This is a DERIVED/COMPUTED view over `trades` — it is never
+ * persisted directly. Each lot traces back to exactly one assignment trade (`sourceTradeId`).
+ * When a Covered Call written against that ticker is later Assigned, shares are consumed
+ * FIFO (oldest acquisition first) across lots, tracked in `calledAwayInfo`.
+ */
+export interface SecurityLot {
+  id: string // = sourceTradeId (one lot per assignment event)
+  ticker: string
+  originalShares: number // shares created at assignment (contracts * 100)
+  shares: number // shares still held in this lot (originalShares - calledAwayShares)
+  calledAwayShares: number
+  costBasis: number // per-share cost = strike price at assignment
+  acquiredDate: string // ISO date = the assignment trade's closeDate
+  sourceTradeId: string
+  status: 'Held' | 'Partially Called' | 'Called Away'
+  calledAwayInfo: { tradeId: string; shares: number; price: number; date: string }[]
+}
+
+/** Per-ticker roll-up of held shares, average cost, and how much is available to cover new Covered Calls. */
+export interface HoldingsSummary {
+  ticker: string
+  heldShares: number
+  avgCostBasis: number
+  reservedByOpenCalls: number // shares already committed to currently-Open Covered Call trades
+  availableToCover: number // heldShares - reservedByOpenCalls (never below 0)
+  lots: SecurityLot[]
+}

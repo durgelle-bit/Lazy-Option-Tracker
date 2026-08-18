@@ -4,8 +4,16 @@ import { uid } from '../utils/calc'
 import { X, Save } from 'lucide-react'
 import ModalShell from './ModalShell'
 
+interface Prefill {
+  ticker: string
+  strategy: StrategyType
+  strike?: number
+  notes?: string
+}
+
 interface Props {
   trade: Trade | null
+  prefill?: Prefill
   onSave: (t: Trade) => void
   onClose: () => void
 }
@@ -17,18 +25,18 @@ const defaultExpiryISO = () => {
   return d.toISOString().slice(0, 10)
 }
 
-export default function TradeModal({ trade, onSave, onClose }: Props) {
+export default function TradeModal({ trade, prefill, onSave, onClose }: Props) {
   const isEdit = !!trade
 
-  const [ticker, setTicker] = useState(trade?.ticker || '')
-  const [strategy, setStrategy] = useState<StrategyType>(trade?.strategy || 'Cash-Secured Put')
-  const [strike, setStrike] = useState(trade ? String(trade.strike) : '')
+  const [ticker, setTicker] = useState(trade?.ticker || prefill?.ticker || '')
+  const [strategy, setStrategy] = useState<StrategyType>(trade?.strategy || prefill?.strategy || 'Cash-Secured Put')
+  const [strike, setStrike] = useState(trade ? String(trade.strike) : prefill?.strike !== undefined ? String(prefill.strike) : '')
   const [contracts, setContracts] = useState(trade ? String(trade.contracts) : '1')
   const [premium, setPremium] = useState(trade ? String(trade.premium) : '')
   const [fees, setFees] = useState(trade ? String(trade.fees) : '0')
   const [openDate, setOpenDate] = useState(trade?.openDate?.slice(0, 10) || todayISO())
   const [expiry, setExpiry] = useState(trade?.expiry?.slice(0, 10) || defaultExpiryISO())
-  const [notes, setNotes] = useState(trade?.notes || '')
+  const [notes, setNotes] = useState(trade?.notes || prefill?.notes || '')
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
@@ -205,11 +213,19 @@ export default function TradeModal({ trade, onSave, onClose }: Props) {
             />
           </div>
 
-          <div className="rounded-lg border border-vault-700 bg-vault-850 px-4 py-3 text-xs text-slate-500">
-            <strong className="text-slate-400">Tip:</strong> Credit strategies (Cash-Secured Put, Covered Call, Naked
-            Put/Call, Credit Spread) collect premium up front. Debit strategies (Long Call/Put, Debit Spread) pay
-            premium up front. This determines how cash flow and Annualized Expected Return are calculated.
-          </div>
+          {prefill && strategy === 'Covered Call' ? (
+            <div className="rounded-lg border border-profit/30 bg-profit/5 px-4 py-3 text-xs text-slate-400">
+              <strong className="text-profit-glow">Covered against held shares:</strong> This trade is pre-filled
+              from your Assigned Securities holding in {prefill.ticker}. Set the Strike and Contracts to match the
+              shares you want to cover (100 shares per contract).
+            </div>
+          ) : (
+            <div className="rounded-lg border border-vault-700 bg-vault-850 px-4 py-3 text-xs text-slate-500">
+              <strong className="text-slate-400">Tip:</strong> Credit strategies (Cash-Secured Put, Covered Call, Naked
+              Put/Call, Credit Spread) collect premium up front. Debit strategies (Long Call/Put, Debit Spread) pay
+              premium up front. This determines how cash flow and Annualized Expected Return are calculated.
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-3 border-t border-vault-700 px-6 py-4">

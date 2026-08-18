@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AppData, ProfitAllocation, Trade } from './types'
 import { DEFAULT_DATA, loadData, saveData } from './utils/storage'
-import { computeTotals, uid } from './utils/calc'
+import { computeTotals, deriveHoldingsSummary, isShortPut, uid } from './utils/calc'
 import { useToast } from './hooks/useToast'
 
 import Header from './components/Header'
@@ -9,6 +9,7 @@ import Dashboard from './components/Dashboard'
 import ActiveLedger from './components/ActiveLedger'
 import SettledLedger from './components/SettledLedger'
 import AllocationLedger from './components/AllocationLedger'
+import SecuritiesLedger from './components/SecuritiesLedger'
 import TradeModal from './components/TradeModal'
 import CloseTradeModal from './components/CloseTradeModal'
 import AllocationModal from './components/AllocationModal'
@@ -16,7 +17,14 @@ import SettingsPanel from './components/SettingsPanel'
 import ToastStack from './components/ToastStack'
 import ConfirmDialog from './components/ConfirmDialog'
 
-type View = 'dashboard' | 'active' | 'settled' | 'allocations'
+type View = 'dashboard' | 'active' | 'settled' | 'allocations' | 'securities'
+
+interface CoveredCallPrefill {
+  ticker: string
+  strategy: 'Covered Call'
+  strike?: number
+  notes?: string
+}
 
 export default function App() {
   const [data, setData] = useState<AppData>(() => loadData())
@@ -30,6 +38,7 @@ export default function App() {
   const [editingAllocation, setEditingAllocation] = useState<ProfitAllocation | null>(null)
   const [showAllocationModal, setShowAllocationModal] = useState(false)
   const [confirmDeleteAllocation, setConfirmDeleteAllocation] = useState<ProfitAllocation | null>(null)
+  const [tradePrefill, setTradePrefill] = useState<CoveredCallPrefill | undefined>(undefined)
   const { toasts, push, dismiss } = useToast()
 
   const firstRender = useRef(true)
@@ -48,14 +57,28 @@ export default function App() {
     () => computeTotals(data.trades, data.settings.startingCash, data.profitAllocations),
     [data.trades, data.settings.startingCash, data.profitAllocations]
   )
+  const holdings = useMemo(() => deriveHoldingsSummary(data.trades), [data.trades])
 
   function openNewTrade() {
     setEditingTrade(null)
+    setTradePrefill(undefined)
+    setShowTradeModal(true)
+  }
+
+  function openSellCoveredCall(ticker: string, availableShares: number, avgCostBasis: number) {
+    setEditingTrade(null)
+    setTradePrefill({
+      ticker,
+      strategy: 'Covered Call',
+      strike: Math.round(avgCostBasis),
+      notes: `Covered by ${availableShares} assigned shares (avg cost $${avgCostBasis.toFixed(2)}).`,
+    })
     setShowTradeModal(true)
   }
 
   function openEditTrade(trade: Trade) {
     setEditingTrade(trade)
+    setTradePrefill(undefined)
     setShowTradeModal(true)
   }
 
@@ -70,6 +93,7 @@ export default function App() {
     push(editingTrade ? 'Trade updated.' : 'Trade added to ledger.', 'success')
     setShowTradeModal(false)
     setEditingTrade(null)
+    setTradePrefill(undefined)
   }
 
   function handleDeleteTrade(trade: Trade) {
@@ -92,7 +116,18 @@ export default function App() {
       ...prev,
       trades: prev.trades.map((t) => (t.id === updated.id ? updated : t)),
     }))
-    push(`${updated.ticker} moved to Settled Ledger.`, 'success')
+    if (updated.status === 'Assigned' && isShortPut(updated.strategy)) {
+      const shares = updated.contracts * 100
+      push(
+        `${updated.ticker} assigned — ${shares} shares added to Assigned Securities at $${updated.strike.toFixed(2)}.`,
+        'success'
+      )
+    } else if (updated.status === 'Assigned' && updated.strategy === 'Covered Call') {
+      const shares = updated.contracts * 100
+      push(`${updated.ticker} called away — ${shares} shares removed from Assigned Securities.`, 'success')
+    } else {
+      push(`${updated.ticker} moved to Settled Ledger.`, 'success')
+    }
     setClosingTrade(null)
   }
 
@@ -204,6 +239,7 @@ export default function App() {
           activeCount={activeTrades.length}
           settledCount={settledTrades.length}
           allocationCount={data.profitAllocations.length}
+          securitiesCount={holdings.length}
         />
 
         <main className="mx-auto max-w-7xl px-4 pb-24 pt-6 sm:px-6 lg:px-8">
@@ -241,6 +277,13 @@ export default function App() {
               onDelete={handleDeleteTrade}
             />
           )}
+          {view === 'securities' && (
+            <SecuritiesLedger
+              holdings={holdings}
+              currency={data.settings.displayCurrency}
+              onSellCoveredCall={openSellCoveredCall}
+            />
+          )}
           {view === 'allocations' && (
             <AllocationLedger
               allocations={data.profitAllocations}
@@ -258,10 +301,12 @@ export default function App() {
       {showTradeModal && (
         <TradeModal
           trade={editingTrade}
+          prefill={tradePrefill}
           onSave={handleSaveTrade}
           onClose={() => {
             setShowTradeModal(false)
             setEditingTrade(null)
+            setTradePrefill(undefined)
           }}
         />
       )}
@@ -302,7 +347,13 @@ export default function App() {
       {confirmDelete && (
         <ConfirmDialog
           title="Delete Trade?"
-          message={`This will permanently remove the ${confirmDelete.ticker} ${confirmDelete.strategy} trade from your ledger. This cannot be undone.`}
+          message={
+            confirmDelete.status === 'Assigned' && isShortPut(confirmDelete.strategy)
+              ? `This will permanently remove the ${confirmDelete.ticker} ${confirmDelete.strategy} trade AND the ${confirmDelete.contracts * 100} assigned shares it created in Assigned Securities. This cannot be undone.`
+              : confirmDelete.status === 'Assigned' && confirmDelete.strategy === 'Covered Call'
+              ? `This will permanently remove the ${confirmDelete.ticker} Covered Call trade and restore the ${confirmDelete.contracts * 100} called-away shares to Assigned Securities. This cannot be undone.`
+              : `This will permanently remove the ${confirmDelete.ticker} ${confirmDelete.strategy} trade from your ledger. This cannot be undone.`
+          }
           confirmLabel="Delete"
           danger
           onConfirm={confirmDeleteTrade}
@@ -313,7 +364,13 @@ export default function App() {
       {confirmUndo && (
         <ConfirmDialog
           title="Undo Settlement?"
-          message={`This will reverse the close and move ${confirmUndo.ticker} back to the Active Ledger as an Open position.`}
+          message={
+            confirmUndo.status === 'Assigned' && isShortPut(confirmUndo.strategy)
+              ? `This will reverse the close, move ${confirmUndo.ticker} back to the Active Ledger, and remove the ${confirmUndo.contracts * 100} assigned shares it created in Assigned Securities.`
+              : confirmUndo.status === 'Assigned' && confirmUndo.strategy === 'Covered Call'
+              ? `This will reverse the close, move ${confirmUndo.ticker} back to the Active Ledger, and restore the ${confirmUndo.contracts * 100} called-away shares to Assigned Securities.`
+              : `This will reverse the close and move ${confirmUndo.ticker} back to the Active Ledger as an Open position.`
+          }
           confirmLabel="Undo & Reopen"
           onConfirm={confirmUndoTrade}
           onCancel={() => setConfirmUndo(null)}

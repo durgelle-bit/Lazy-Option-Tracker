@@ -39,8 +39,16 @@
 
 ### 🗄️ Settled Ledger (Archive)
 - All Closed / Expired / Assigned trades with computed **Realized P/L**, days held, and close details.
-- **Undo** button: reverses the settlement math and restores the trade to "Open" status in the Active Ledger — no data loss, no re-entry needed.
-- Permanent delete also available for cleaning up bad entries.
+- **Undo** button: reverses the settlement math and restores the trade to "Open" status in the Active Ledger — no data loss, no re-entry needed. If the settlement created or consumed assigned shares (see below), Undo reverses that automatically too.
+- Permanent delete also available for cleaning up bad entries (same automatic share reversal applies).
+
+### 📦 Assigned Securities — NEW
+Closes the gap where a Covered Call was just a label with no link to real share ownership.
+- Settling a **Cash-Secured Put** or **Naked Put** as **Assigned** automatically creates a share lot here: `contracts × 100` shares at a cost basis equal to the strike price, dated to the assignment's close date.
+- Holdings are grouped by ticker with **held shares**, **average cost basis**, **total cost**, and how many shares are **reserved** by any Covered Call you currently have Open on that ticker vs. how many are still **available to cover** a new one.
+- **Sell Covered Call** action on any ticker with ≥100 available shares opens the trade form pre-filled with the ticker, "Covered Call" strategy, and a strike suggestion at your average cost basis.
+- If that Covered Call is later settled as **Assigned** (shares called away), the shares are automatically removed from the oldest lot(s) first (FIFO) — no manual bookkeeping.
+- **Fully derived, nothing extra to store or migrate**: holdings are computed live from the trade ledger every render (same pattern as Total Cash / Open Exposure), so editing, undoing, or deleting the underlying assignment/Covered Call trades keeps the share ledger perfectly in sync automatically. Expand a ticker's row to see individual lots and their FIFO consumption history.
 
 ### 💸 Profit Allocation (Deployment Ledger) — NEW
 - A dedicated tab to record every use of realized profit: **Withdrawal** or **Stock Purchase**.
@@ -105,6 +113,31 @@ interface AppData {
     reserveBufferPercent: number            // default 20 (0-50 valid range)
   }
 }
+
+// Assigned Securities — NOT stored in AppData. Fully derived from `trades` on every
+// render (deriveSecurityLots / deriveHoldingsSummary in utils/calc.ts), so it never
+// needs a schema migration and Undo/Delete on trades keeps it correct for free.
+interface SecurityLot {
+  id: string                                // = sourceTradeId, one lot per assignment
+  ticker: string
+  originalShares: number                    // contracts * 100 at assignment
+  shares: number                            // still held (originalShares - calledAwayShares)
+  calledAwayShares: number
+  costBasis: number                         // per-share = strike price at assignment
+  acquiredDate: string
+  sourceTradeId: string
+  status: 'Held' | 'Partially Called' | 'Called Away'
+  calledAwayInfo: { tradeId: string; shares: number; price: number; date: string }[]
+}
+
+interface HoldingsSummary {                 // per-ticker roll-up shown in the UI
+  ticker: string
+  heldShares: number
+  avgCostBasis: number
+  reservedByOpenCalls: number                // shares committed to currently-Open Covered Calls
+  availableToCover: number                   // heldShares - reservedByOpenCalls, floor 0
+  lots: SecurityLot[]
+}
 ```
 
 ### The Two-Bucket Profit Formulas
@@ -128,6 +161,7 @@ Cash Safe For Deployment  = Cash Available for Trade − Reserve Buffer (when en
 3. Track open positions in the **Option Ledger** — watch Annualized Expected Return and days-to-expiry.
 4. When a position resolves, click the ✅ icon to **Settle** it — choose Closed/Expired/Assigned, enter the closing premium/fees, and confirm.
 5. Review settled history in the **Settled Archive**. Made a mistake? Hit **Undo** to reopen it.
+5a. When you settle a Cash-Secured Put or Naked Put as **Assigned**, the shares appear automatically in the new **Assigned Securities** tab at your strike price. From there, click **Sell Covered Call** on any ticker with enough available shares to write a call against your holding — the trade form opens pre-filled and ready to go.
 6. When you withdraw profit or buy stock with it, go to the **Profit Allocation** tab and record it — this keeps your Scoreboard intact while accurately tracking your remaining Bankroll.
 7. Check the **Portfolio Vault** dashboard anytime to see your Total Realized Profit, Unrealized Profit (still in flight on open positions), Total Deployed, and Cash Safe For Deployment (your Bankroll, net of the Reserve Buffer and capital already tied up in open trades) side by side — plus your Reserve Intact/Breached status right underneath the headline figure.
 8. Go to **Settings** (gear icon) regularly to **Export to JSON** as a backup, or **Import from JSON** to restore/migrate data. The dashboard will nag you with a banner if it's been 7+ days since your last export. The same panel lets you toggle the Reserve Buffer on/off and set its percentage (0–50%).
@@ -137,4 +171,4 @@ Cash Safe For Deployment  = Cash Available for Trade − Reserve Buffer (when en
 - **GitHub**: https://github.com/durgelle-bit/Lazy-Option-Tracker
 - **Tech Stack**: React 18 + TypeScript + Vite + Tailwind CSS + Chart.js + lucide-react icons
 - **Status**: Ready to deploy (static SPA — no Workers backend required)
-- **Last Updated**: 2026-07-15
+- **Last Updated**: 2026-08-18

@@ -1,4 +1,4 @@
-import { CREDIT_STRATEGIES, ProfitAllocation, Trade } from '../types'
+import { CREDIT_STRATEGIES, HoldingsSummary, ProfitAllocation, SecurityLot, SHORT_PUT_STRATEGIES, Trade } from '../types'
 
 export const isCredit = (strategy: Trade['strategy']) =>
   (CREDIT_STRATEGIES as string[]).includes(strategy)
@@ -261,4 +261,101 @@ export function formatDate(iso: string): string {
 
 export function uid(): string {
   return `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`
+}
+
+/** True if a strategy is a short put whose assignment obligates buying 100 shares/contract at strike. */
+export const isShortPut = (strategy: Trade['strategy']) =>
+  (SHORT_PUT_STRATEGIES as string[]).includes(strategy)
+
+/**
+ * Derives all Security Lots from the trade ledger. A lot is created for every short-put
+ * trade Assigned (shares bought at strike), and consumed FIFO (oldest lot first) whenever
+ * a Covered Call written on that ticker is itself Assigned (shares called away).
+ *
+ * This is a pure, fully-derived computation over `trades` — nothing about holdings is
+ * ever separately persisted, so Undo/Delete/Edit on the underlying trades automatically
+ * and correctly reverses share creation/consumption with zero extra sync logic.
+ */
+export function deriveSecurityLots(trades: Trade[]): SecurityLot[] {
+  // 1. Create one lot per Assigned short-put trade, ordered by acquisition date (FIFO).
+  const lots: SecurityLot[] = trades
+    .filter((t) => t.status === 'Assigned' && isShortPut(t.strategy))
+    .map((t) => {
+      const originalShares = t.contracts * 100
+      return {
+        id: t.id,
+        ticker: t.ticker,
+        originalShares,
+        shares: originalShares,
+        calledAwayShares: 0,
+        costBasis: t.strike,
+        acquiredDate: t.closeDate || t.updatedAt,
+        sourceTradeId: t.id,
+        status: 'Held' as const,
+        calledAwayInfo: [] as SecurityLot['calledAwayInfo'],
+      }
+    })
+    .sort((a, b) => new Date(a.acquiredDate).getTime() - new Date(b.acquiredDate).getTime())
+
+  // 2. Walk Assigned Covered Calls chronologically, consuming FIFO lots on the same ticker.
+  const calledAwayCalls = trades
+    .filter((t) => t.status === 'Assigned' && t.strategy === 'Covered Call')
+    .sort((a, b) => new Date(a.closeDate || a.updatedAt).getTime() - new Date(b.closeDate || b.updatedAt).getTime())
+
+  for (const call of calledAwayCalls) {
+    let sharesToCall = call.contracts * 100
+    const date = call.closeDate || call.updatedAt
+    const tickerLots = lots.filter((l) => l.ticker === call.ticker && l.shares > 0)
+    for (const lot of tickerLots) {
+      if (sharesToCall <= 0) break
+      const take = Math.min(lot.shares, sharesToCall)
+      if (take <= 0) continue
+      lot.shares -= take
+      lot.calledAwayShares += take
+      lot.calledAwayInfo.push({ tradeId: call.id, shares: take, price: call.strike, date })
+      lot.status = lot.shares <= 0 ? 'Called Away' : 'Partially Called'
+      sharesToCall -= take
+    }
+  }
+
+  return lots
+}
+
+/** Rolls up Security Lots into a per-ticker holdings summary, netting out shares reserved by currently-Open Covered Calls. */
+export function deriveHoldingsSummary(trades: Trade[]): HoldingsSummary[] {
+  const lots = deriveSecurityLots(trades)
+  const byTicker = new Map<string, SecurityLot[]>()
+  for (const lot of lots) {
+    if (!byTicker.has(lot.ticker)) byTicker.set(lot.ticker, [])
+    byTicker.get(lot.ticker)!.push(lot)
+  }
+
+  const openCallsByTicker = new Map<string, number>()
+  for (const t of trades) {
+    if (t.status === 'Open' && t.strategy === 'Covered Call') {
+      openCallsByTicker.set(t.ticker, (openCallsByTicker.get(t.ticker) || 0) + t.contracts * 100)
+    }
+  }
+
+  const summaries: HoldingsSummary[] = []
+  for (const [ticker, tickerLots] of byTicker.entries()) {
+    const heldShares = tickerLots.reduce((sum, l) => sum + l.shares, 0)
+    if (heldShares <= 0 && !tickerLots.some((l) => l.shares > 0)) {
+      // Ticker fully called away — skip unless caller wants full history (kept out of summary view)
+      if (heldShares <= 0) continue
+    }
+    const totalCostOfHeldShares = tickerLots.reduce((sum, l) => sum + l.shares * l.costBasis, 0)
+    const avgCostBasis = heldShares > 0 ? totalCostOfHeldShares / heldShares : 0
+    const reservedByOpenCalls = openCallsByTicker.get(ticker) || 0
+    summaries.push({
+      ticker,
+      heldShares,
+      avgCostBasis,
+      reservedByOpenCalls,
+      availableToCover: Math.max(0, heldShares - reservedByOpenCalls),
+      lots: tickerLots,
+    })
+  }
+
+  return summaries.sort((a, b) => a.ticker.localeCompare(b.ticker))
 }
