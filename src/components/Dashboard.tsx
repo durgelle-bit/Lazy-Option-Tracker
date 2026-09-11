@@ -61,16 +61,24 @@ export default function Dashboard({
     () => reserveBuffer(startingCash, reserveBufferPercent),
     [startingCash, reserveBufferPercent]
   )
-  // The headline Bankroll figure, net of the Reserve Buffer and capital already tied up in open positions.
+  // The headline Bankroll figure, net of the Reserve Buffer, capital already tied up in
+  // open positions, AND the cost-basis value of shares held from put assignments.
   const cashSafe = useMemo(
     () =>
       cashSafeForDeployment(
         totals.cashAvailableForTrade,
         reserveBufferAmount,
         reserveBufferEnabled,
-        totals.openExposureTotal
+        totals.openExposureTotal,
+        totals.heldSecuritiesValue
       ),
-    [totals.cashAvailableForTrade, reserveBufferAmount, reserveBufferEnabled, totals.openExposureTotal]
+    [
+      totals.cashAvailableForTrade,
+      reserveBufferAmount,
+      reserveBufferEnabled,
+      totals.openExposureTotal,
+      totals.heldSecuritiesValue,
+    ]
   )
   // Reserve is "intact" as long as the Bankroll still covers the full Reserve Buffer
   // after deployable cash is set aside — i.e. Cash Safe For Deployment hasn't gone negative.
@@ -248,8 +256,8 @@ export default function Dashboard({
             className={`stat-card transition ${cashSafe >= 0 ? 'hover:shadow-glow-blue' : 'hover:shadow-glow-red'}`}
             title={
               reserveBufferEnabled
-                ? 'Bankroll − Reserve Buffer − Open Exposure. This is the cash you can actually commit to a brand-new position right now, after setting aside your safety net and capital already tied up in open trades.'
-                : 'Bankroll − Open Exposure. This is the cash you can actually commit to a brand-new position right now, after excluding capital already tied up in open trades.'
+                ? 'Bankroll − Reserve Buffer − Open Exposure − Held Securities Value. This is the cash you can actually commit to a brand-new position right now, after setting aside your safety net, capital already tied up in open trades, and shares held from put assignments.'
+                : 'Bankroll − Open Exposure − Held Securities Value. This is the cash you can actually commit to a brand-new position right now, after excluding capital already tied up in open trades and shares held from put assignments.'
             }
           >
             <div className="mb-3 flex items-center justify-between">
@@ -264,8 +272,13 @@ export default function Dashboard({
             </div>
             <p className="font-mono text-2xl font-bold text-white">{formatCurrency(cashSafe, currency)}</p>
             <p className="mt-1 text-xs text-slate-500">
-              {reserveBufferEnabled ? 'Bankroll − Reserve − Open Exposure' : 'Bankroll − Open Exposure'}
+              {reserveBufferEnabled ? 'Bankroll − Reserve − Exposure − Held Shares' : 'Bankroll − Exposure − Held Shares'}
             </p>
+            {totals.heldSecuritiesValue > 0 && (
+              <p className="mt-1 text-right text-xs font-mono text-gold-glow">
+                Held Shares: -{formatCurrency(totals.heldSecuritiesValue, currency)}
+              </p>
+            )}
 
             {reserveBufferEnabled && (
               <div className="mt-3 border-t border-vault-700 pt-2">
@@ -302,7 +315,7 @@ export default function Dashboard({
           icon={<PiggyBank size={18} />}
           accent="blue"
           sub={`Starting: ${formatCurrency(startingCash, currency)}`}
-          tooltip="Brokerage-style running cash balance including capital tied up as collateral in open positions, net of everything already withdrawn or deployed out of the account. Distinct from your bankroll above."
+          tooltip="Brokerage-style running cash balance including capital tied up as collateral in open positions, net of everything already withdrawn or deployed out of the account. Includes the real cash effect of assignments — cash out to buy shares on a Cash-Secured/Naked Put assignment, cash in when a Covered Call is called away. Distinct from your bankroll above."
         />
         <StatCard
           label="Global Portfolio Velocity"

@@ -13,7 +13,7 @@
 - **Two-Bucket Profit Accounting** — the headline addition:
   - **Total Realized Profit** ("the Scoreboard") — cumulative gross P/L from all settled trades since inception. This number **never decreases** from withdrawals or stock purchases — it's your pure trading track record.
   - **Total Deployed** — sum of every entry in the Profit Allocation ledger (withdrawals + stock purchases).
-  - **Cash Safe For Deployment** ("the headline Bankroll figure") — `(Starting Cash + Total Realized Profit) − Total Deployed − Reserve Buffer − Open Exposure`. This is the actual spendable capital you have left to commit to a brand-new position right now, net of your safety-net reserve *and* the capital already tied up in open trades.
+  - **Cash Safe For Deployment** ("the headline Bankroll figure") — `(Starting Cash + Total Realized Profit) − Total Deployed − Reserve Buffer − Open Exposure − Held Securities Value`. This is the actual spendable capital you have left to commit to a brand-new position right now, net of your safety-net reserve, the capital already tied up in open trades, *and* the cost-basis value of any shares currently held from put assignments (see Assigned Securities below) — that cash already left the account to buy the stock, so it can't be double-spent on a new trade.
   - **Unrealized Profit** — total net premium already collected from currently OPEN credit-strategy positions (the profit you'd bank if every open credit position expired worthless today). Not yet part of Total Realized Profit until each trade settles.
   - All figures are displayed together on the dashboard so you can see your gross performance, your open-position profit still in flight, and your real, fully-adjusted bankroll at a glance.
 - **Reserve Buffer** — an optional safety-net carve-out embedded inside the Cash Safe For Deployment card (no extra dashboard cards or tabs added):
@@ -24,7 +24,7 @@
     - Cash Safe For Deployment ≥ $0 → "✅ Reserve Intact" (normal styling) — your reserve is fully covered.
     - Cash Safe For Deployment < $0 → "⚠ Reserve Breached" in red with a warning icon and "Short by $X" — you'd be dipping into the reserve to trade further.
   - Purely informational/derived math on top of the display layer — it never alters the underlying Total Realized Profit / Total Deployed / raw Bankroll formulas.
-- **Total Cash** — starting cash + all realized cash flows from opened/closed trades, minus Total Deployed (brokerage-style balance, includes collateral tied up in open positions, net of anything already withdrawn or spent).
+- **Total Cash** — starting cash + all realized cash flows from opened/closed trades, minus Total Deployed (brokerage-style balance, includes collateral tied up in open positions, net of anything already withdrawn or spent). **Now includes the real cash effect of assignments**: a Cash-Secured/Naked Put assignment pulls `strike × contracts × 100` OUT of Total Cash (buying the shares); a Covered Call assignment adds `strike × contracts × 100` back IN (shares called away/sold). This means a full CSP→shares→Covered Call→called-away round trip automatically reflects any stock-level gain or loss from the two strikes differing — nothing is hidden.
 - **Global Portfolio Velocity** — a dollar-weighted, annualized return metric computed across *all* settled trades (return ÷ (capital deployed × days held), annualized to 365 days). This tells you how efficiently your capital compounds over time, not just your win rate.
 - **Win Rate**, **Open Exposure** (Credit vs. Debit), **Open Strategy Mix**, and a **Realized Equity Curve** chart (Chart.js).
 - **Last Export tracker** — a dedicated stat card plus a dismiss-free banner that appears once your JSON backup is 7+ days old (or you've never exported), nudging you back to Settings.
@@ -49,6 +49,8 @@ Closes the gap where a Covered Call was just a label with no link to real share 
 - **Sell Covered Call** action on any ticker with ≥100 available shares opens the trade form pre-filled with the ticker, "Covered Call" strategy, and a strike suggestion at your average cost basis.
 - If that Covered Call is later settled as **Assigned** (shares called away), the shares are automatically removed from the oldest lot(s) first (FIFO) — no manual bookkeeping.
 - **Fully derived, nothing extra to store or migrate**: holdings are computed live from the trade ledger every render (same pattern as Total Cash / Open Exposure), so editing, undoing, or deleting the underlying assignment/Covered Call trades keeps the share ledger perfectly in sync automatically. Expand a ticker's row to see individual lots and their FIFO consumption history.
+- **Real cash-flow accounting, not a static snapshot**: an Assignment moves real cash — buying shares on a put assignment pulls `strike × contracts × 100` out of Total Cash; a Covered Call being called away adds `strike × contracts × 100` back in. While shares are held, their cost-basis value is also carved out of **Cash Safe For Deployment** (labeled "Held Shares" on the dashboard card) so you never see spendable cash that's actually parked in stock.
+- **No double-counted collateral**: an *Open* Covered Call no longer counts toward Open Credit Exposure (which is cash collateral) — it's secured by the shares you hold, not cash, and that share value is already reflected in Held Securities Value. Every other credit strategy (Cash-Secured Put, Naked Put/Call, Credit Spread) still reserves cash collateral exactly as before.
 
 ### 💸 Profit Allocation (Deployment Ledger) — NEW
 - A dedicated tab to record every use of realized profit: **Withdrawal** or **Stock Purchase**.
@@ -148,8 +150,20 @@ Total Deployed            = Σ amount for every entry in profitAllocations[]    
 Cash Available for Trade  = (Starting Cash + Total Realized Profit) − Total Deployed     // the raw Bankroll
 Reserve Buffer            = Starting Cash × Reserve Buffer Percentage                    // safety-net carve-out
 Open Exposure             = Open Credit Exposure + Open Debit Exposure                   // capital tied up in open trades
-Cash Safe For Deployment  = Cash Available for Trade − Reserve Buffer (when enabled) − Open Exposure  // dashboard headline figure
+                            (Open Credit Exposure excludes Covered Calls — they're share-
+                             backed, not cash-backed; see Held Securities Value below)
+Held Securities Value     = Σ (shares still held × cost basis) across all Security Lots  // stock bought via put assignment, not sold/called away yet
+Cash Safe For Deployment  = Cash Available for Trade − Reserve Buffer (when enabled)
+                            − Open Exposure − Held Securities Value                       // dashboard headline figure
 ```
+
+### Assignment Cash Flow (Total Cash)
+Total Cash is a running brokerage-style balance built from every trade's cash flow. On top of the existing open/close premium legs, an **Assignment** now also moves the SHARE leg of real cash:
+```
+Cash-Secured / Naked Put Assigned  → Total Cash −= strike × contracts × 100   // buying the shares
+Covered Call Assigned              → Total Cash += strike × contracts × 100   // shares called away / sold
+```
+Because this is tracked as an actual cash-flow event (not a snapshot of "shares × cost basis"), a full wheel-strategy round trip — assigned on a put, then the resulting shares called away on a covered call at a *different* strike — automatically surfaces the resulting stock-level gain or loss in Total Cash, with zero extra bookkeeping.
 
 ## Storage
 - **Engine**: Browser `localStorage`, key `option-vault:data:v1` (schema version 2 — auto-migrates from version 1 saves by defaulting `profitAllocations` to `[]`, and defaults `reserveBufferEnabled`/`reserveBufferPercent` to `true`/`20` for any save or JSON import that predates the Reserve Buffer feature).
@@ -163,7 +177,7 @@ Cash Safe For Deployment  = Cash Available for Trade − Reserve Buffer (when en
 5. Review settled history in the **Settled Archive**. Made a mistake? Hit **Undo** to reopen it.
 5a. When you settle a Cash-Secured Put or Naked Put as **Assigned**, the shares appear automatically in the new **Assigned Securities** tab at your strike price. From there, click **Sell Covered Call** on any ticker with enough available shares to write a call against your holding — the trade form opens pre-filled and ready to go.
 6. When you withdraw profit or buy stock with it, go to the **Profit Allocation** tab and record it — this keeps your Scoreboard intact while accurately tracking your remaining Bankroll.
-7. Check the **Portfolio Vault** dashboard anytime to see your Total Realized Profit, Unrealized Profit (still in flight on open positions), Total Deployed, and Cash Safe For Deployment (your Bankroll, net of the Reserve Buffer and capital already tied up in open trades) side by side — plus your Reserve Intact/Breached status right underneath the headline figure.
+7. Check the **Portfolio Vault** dashboard anytime to see your Total Realized Profit, Unrealized Profit (still in flight on open positions), Total Deployed, and Cash Safe For Deployment (your Bankroll, net of the Reserve Buffer, capital already tied up in open trades, and the cost-basis value of any shares held from put assignments) side by side — plus your Reserve Intact/Breached status right underneath the headline figure.
 8. Go to **Settings** (gear icon) regularly to **Export to JSON** as a backup, or **Import from JSON** to restore/migrate data. The dashboard will nag you with a banner if it's been 7+ days since your last export. The same panel lets you toggle the Reserve Buffer on/off and set its percentage (0–50%).
 
 ## Deployment
@@ -171,4 +185,4 @@ Cash Safe For Deployment  = Cash Available for Trade − Reserve Buffer (when en
 - **GitHub**: https://github.com/durgelle-bit/Lazy-Option-Tracker
 - **Tech Stack**: React 18 + TypeScript + Vite + Tailwind CSS + Chart.js + lucide-react icons
 - **Status**: Ready to deploy (static SPA — no Workers backend required)
-- **Last Updated**: 2026-08-18
+- **Last Updated**: 2026-09-11
