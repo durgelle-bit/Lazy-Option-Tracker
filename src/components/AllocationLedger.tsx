@@ -7,6 +7,7 @@ interface Props {
   allocations: ProfitAllocation[]
   currency: string
   realizedProfit: number
+  realizedStockPL: number
   cashAvailableForTrade: number
   onAdd: () => void
   onEdit: (a: ProfitAllocation) => void
@@ -29,6 +30,7 @@ export default function AllocationLedger({
   allocations,
   currency,
   realizedProfit,
+  realizedStockPL,
   cashAvailableForTrade,
   onAdd,
   onEdit,
@@ -117,7 +119,13 @@ export default function AllocationLedger({
 
       <div className="rounded-xl border border-vault-700 bg-vault-850 px-4 py-3 text-xs text-slate-500">
         <strong className="text-slate-400">Formula:</strong> Cash Available for Trade = (Starting Cash{' '}
-        <span className="text-slate-400">+</span> Total Realized Profit <span className="font-mono text-profit-glow">{formatCurrency(realizedProfit, currency)}</span>){' '}
+        <span className="text-slate-400">+</span> Option Realized Profit{' '}
+        <span className="font-mono text-profit-glow">{formatCurrency(realizedProfit, currency)}</span>{' '}
+        <span className="text-slate-400">+</span> Stock Realized P/L{' '}
+        <span className={`font-mono ${realizedStockPL >= 0 ? 'text-profit-glow' : 'text-loss-glow'}`}>
+          {formatCurrency(realizedStockPL, currency)}
+        </span>
+        ){' '}
         <span className="text-slate-400">−</span> Total Deployed{' '}
         <span className="font-mono text-gold-glow">{formatCurrency(deployed, currency)}</span> ={' '}
         <span className={`font-mono font-bold ${cashAvailableForTrade >= 0 ? 'text-accent' : 'text-loss-glow'}`}>

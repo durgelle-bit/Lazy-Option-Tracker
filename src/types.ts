@@ -120,3 +120,20 @@ export interface HoldingsSummary {
   availableToCover: number // heldShares - reservedByOpenCalls (never below 0)
   lots: SecurityLot[]
 }
+
+/**
+ * A single realized stock-P/L event — one row per chunk of shares called away from a
+ * lot. This is the audit trail behind the "Realized Stock P/L" Scoreboard figure: every
+ * dollar in that headline number traces back to exactly one of these rows, so the total
+ * is never an opaque black-box calculation.
+ */
+export interface StockPLEvent {
+  ticker: string
+  shares: number
+  costBasis: number // per-share cost from the original put assignment
+  salePrice: number // the Covered Call's strike (what the shares were called away at)
+  pl: number // (salePrice - costBasis) * shares
+  date: string // ISO date of the Covered Call assignment
+  putTradeId: string // the assignment trade that created the lot this chunk came from
+  callTradeId: string // the Covered Call assignment trade that consumed this chunk
+}

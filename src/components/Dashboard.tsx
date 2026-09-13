@@ -20,6 +20,7 @@ import {
   TriangleAlert,
   ShieldCheck,
   Hourglass,
+  Boxes,
 } from 'lucide-react'
 import Chart from 'chart.js/auto'
 
@@ -227,14 +228,22 @@ export default function Dashboard({
             <Landmark size={12} /> Manage Allocations
           </button>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <StatCard
             label="Total Realized Profit"
             value={formatCurrency(totals.realizedProfit, currency)}
             icon={totals.realizedProfit >= 0 ? <ArrowUpRight size={18} /> : <ArrowDownRight size={18} />}
             accent={totals.realizedProfit >= 0 ? 'green' : 'red'}
-            sub="The Scoreboard · cumulative since inception, never reduced"
-            tooltip="Gross accumulated profit from all settled trades. This figure only ever grows with trading performance — withdrawals and stock purchases never touch it."
+            sub="Option Scoreboard · cumulative since inception, never reduced"
+            tooltip="Gross accumulated profit from all settled trades' OPTION PREMIUM only. This figure only ever grows with trading performance — withdrawals and stock purchases never touch it. See Realized Stock P/L for the separate stock-side gain/loss."
+          />
+          <StatCard
+            label="Realized Stock P/L"
+            value={formatCurrency(totals.realizedStockPL, currency)}
+            icon={<Boxes size={18} />}
+            accent={totals.realizedStockPL > 0 ? 'green' : totals.realizedStockPL < 0 ? 'red' : 'blue'}
+            sub="Stock Scoreboard · completed wheel cycles only"
+            tooltip="A second, independent Scoreboard: cumulative gain/loss on the STOCK itself from completed wheel cycles — assigned on a put, then called away via a Covered Call at a (possibly different) strike. Formula per lot: (Covered Call strike − put assignment cost basis) × shares. Kept separate from Total Realized Profit (option premium) so the two never blend into one opaque number. Zero until you complete at least one full assignment → call-away cycle; shares still held don't count (no mark-to-market)."
           />
           <StatCard
             label="Unrealized Profit"

@@ -1,15 +1,16 @@
 import React, { useMemo, useState } from 'react'
-import { HoldingsSummary } from '../types'
+import { HoldingsSummary, StockPLEvent } from '../types'
 import { formatCurrency, formatDate } from '../utils/calc'
-import { Boxes, ChevronDown, ChevronRight, PhoneCall } from 'lucide-react'
+import { Boxes, ChevronDown, ChevronRight, PhoneCall, History } from 'lucide-react'
 
 interface Props {
   holdings: HoldingsSummary[]
+  stockPLEvents: StockPLEvent[]
   currency: string
   onSellCoveredCall: (ticker: string, availableShares: number, avgCostBasis: number) => void
 }
 
-export default function SecuritiesLedger({ holdings, currency, onSellCoveredCall }: Props) {
+export default function SecuritiesLedger({ holdings, stockPLEvents, currency, onSellCoveredCall }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   function toggle(ticker: string) {
@@ -76,12 +77,68 @@ export default function SecuritiesLedger({ holdings, currency, onSellCoveredCall
         </div>
       )}
 
+      <RealizedStockPLHistory events={stockPLEvents} currency={currency} />
+
       <div className="rounded-lg border border-vault-700 bg-vault-850 px-4 py-3 text-xs text-slate-500">
         <strong className="text-slate-400">How this works:</strong> When you settle a Cash-Secured Put or Naked Put
         trade as <span className="text-gold-glow">Assigned</span>, this app automatically creates a share lot here at
         the strike price. Use <em>Sell Covered Call</em> to write a call against those shares — the "Available to
         Cover" figure already excludes shares committed to any Covered Call you currently have Open. If that Covered
-        Call is later Assigned, the shares are removed from the oldest lot(s) first (FIFO).
+        Call is later Assigned, the shares are removed from the oldest lot(s) first (FIFO), and the resulting
+        stock-level gain or loss is logged below as a Realized Stock P/L event.
+      </div>
+    </div>
+  )
+}
+
+function RealizedStockPLHistory({ events, currency }: { events: StockPLEvent[]; currency: string }) {
+  const totalPL = useMemo(() => events.reduce((sum, ev) => sum + ev.pl, 0), [events])
+
+  if (events.length === 0) return null
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-vault-700 bg-vault-900/40">
+      <div className="flex items-center justify-between border-b border-vault-700 bg-vault-850 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <History size={14} className="text-slate-500" />
+          <h3 className="text-sm font-semibold text-slate-300">Realized Stock P/L History</h3>
+          <span className="rounded-full bg-vault-700 px-2 py-0.5 text-[10px] font-bold leading-none text-slate-300">
+            {events.length}
+          </span>
+        </div>
+        <span className={`font-mono text-sm font-bold ${totalPL >= 0 ? 'text-profit-glow' : 'text-loss-glow'}`}>
+          {formatCurrency(totalPL, currency)}
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[700px] text-left text-sm">
+          <thead>
+            <tr className="border-b border-vault-700 bg-vault-850/60 text-xs uppercase tracking-wider text-slate-500">
+              <th className="px-4 py-2 font-semibold">Ticker</th>
+              <th className="px-4 py-2 text-right font-semibold">Shares</th>
+              <th className="px-4 py-2 text-right font-semibold">Cost Basis</th>
+              <th className="px-4 py-2 text-right font-semibold">Sale Price</th>
+              <th className="px-4 py-2 text-right font-semibold">Date</th>
+              <th className="px-4 py-2 text-right font-semibold">Stock P/L</th>
+            </tr>
+          </thead>
+          <tbody>
+            {events.map((ev, i) => (
+              <tr key={`${ev.putTradeId}-${ev.callTradeId}-${i}`} className="border-b border-vault-800/60 text-xs">
+                <td className="px-4 py-2 font-mono font-bold text-white">{ev.ticker}</td>
+                <td className="px-4 py-2 text-right font-mono text-slate-300">{ev.shares.toLocaleString()}</td>
+                <td className="px-4 py-2 text-right font-mono text-slate-400">${ev.costBasis.toFixed(2)}</td>
+                <td className="px-4 py-2 text-right font-mono text-slate-400">${ev.salePrice.toFixed(2)}</td>
+                <td className="px-4 py-2 text-right font-mono text-slate-400">{formatDate(ev.date)}</td>
+                <td className="px-4 py-2 text-right">
+                  <span className={`font-mono font-semibold ${ev.pl >= 0 ? 'text-profit-glow' : 'text-loss-glow'}`}>
+                    {formatCurrency(ev.pl, currency)}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AppData, ProfitAllocation, Trade } from './types'
 import { DEFAULT_DATA, loadData, saveData } from './utils/storage'
-import { computeTotals, deriveHoldingsSummary, isShortPut, uid } from './utils/calc'
+import { computeTotals, deriveHoldingsSummary, deriveStockPLEvents, isShortPut, uid } from './utils/calc'
 import { useToast } from './hooks/useToast'
 
 import Header from './components/Header'
@@ -58,6 +58,7 @@ export default function App() {
     [data.trades, data.settings.startingCash, data.profitAllocations]
   )
   const holdings = useMemo(() => deriveHoldingsSummary(data.trades), [data.trades])
+  const stockPLEvents = useMemo(() => deriveStockPLEvents(data.trades), [data.trades])
 
   function openNewTrade() {
     setEditingTrade(null)
@@ -280,6 +281,7 @@ export default function App() {
           {view === 'securities' && (
             <SecuritiesLedger
               holdings={holdings}
+              stockPLEvents={stockPLEvents}
               currency={data.settings.displayCurrency}
               onSellCoveredCall={openSellCoveredCall}
             />
@@ -289,6 +291,7 @@ export default function App() {
               allocations={data.profitAllocations}
               currency={data.settings.displayCurrency}
               realizedProfit={totals.realizedProfit}
+              realizedStockPL={totals.realizedStockPL}
               cashAvailableForTrade={totals.cashAvailableForTrade}
               onAdd={openNewAllocation}
               onEdit={openEditAllocation}

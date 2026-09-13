@@ -1,4 +1,4 @@
-import { CREDIT_STRATEGIES, HoldingsSummary, ProfitAllocation, SecurityLot, SHORT_PUT_STRATEGIES, Trade } from '../types'
+import { CREDIT_STRATEGIES, HoldingsSummary, ProfitAllocation, SecurityLot, SHORT_PUT_STRATEGIES, StockPLEvent, Trade } from '../types'
 
 export const isCredit = (strategy: Trade['strategy']) =>
   (CREDIT_STRATEGIES as string[]).includes(strategy)
@@ -124,9 +124,19 @@ export interface PortfolioTotals {
   totalCash: number
   /** The 'Scoreboard': cumulative gross realized profit since inception. Never reduced by withdrawals/purchases. */
   realizedProfit: number
+  /**
+   * A second, independent Scoreboard: cumulative realized gain/loss on the STOCK itself,
+   * from completed wheel cycles (put assignment → shares held → Covered Call assignment →
+   * shares called away). Formula per called-away lot chunk: (Covered Call strike − lot cost
+   * basis) × shares. Only counts shares that have actually been sold — never an unrealized
+   * mark-to-market estimate on shares still held, since this app never tracks live prices.
+   * Kept entirely separate from realizedProfit (which is option premium only) so option
+   * P/L and stock P/L never blend into one opaque figure — both are visible side by side.
+   */
+  realizedStockPL: number
   /** The 'Deployment' ledger total: sum of all profit allocations (withdrawals + stock purchases). */
   totalDeployed: number
-  /** The actual trading bankroll: (Starting Cash + Realized Profit) - Total Deployed. */
+  /** The actual trading bankroll: (Starting Cash + Realized Profit + Realized Stock P/L) - Total Deployed. */
   cashAvailableForTrade: number
   openCreditExposure: number
   openDebitExposure: number
@@ -208,15 +218,22 @@ export function computeTotals(
   const globalVelocity =
     totalCapitalDays > 0 ? (totalReturnWeighted / totalCapitalDays) * 365 * 100 : 0
 
-  const deployed = totalDeployed(allocations)
-  const bankroll = cashAvailableForTrade(startingCash, realizedProfit, deployed)
+  // Derive Security Lots once and reuse for both Held Securities Value and Realized Stock P/L.
+  const lots = deriveSecurityLots(trades)
 
   // Cost-basis value of shares still held from put assignments (Assigned Securities).
   // That cash already left Total Cash to buy the shares — see assignmentCashFlow() above —
   // so it must be carved out of Cash Safe For Deployment too; it's stock, not spendable cash.
-  const heldSecuritiesValue = deriveSecurityLots(trades)
-    .filter((lot) => lot.shares > 0)
-    .reduce((sum, lot) => sum + lot.shares * lot.costBasis, 0)
+  const heldSecuritiesValue = lots.filter((lot) => lot.shares > 0).reduce((sum, lot) => sum + lot.shares * lot.costBasis, 0)
+
+  // Realized Stock P/L — the second Scoreboard. Sum of every deriveStockPLEvents() row,
+  // the same audit trail shown in the Assigned Securities tab, so the headline figure and
+  // its drill-down history can never drift apart. Only shares that have actually been sold
+  // count; shares still held contribute nothing (no mark-to-market in this app).
+  const realizedStockPL = deriveStockPLEventsFromLots(lots).reduce((sum, ev) => sum + ev.pl, 0)
+
+  const deployed = totalDeployed(allocations)
+  const bankroll = cashAvailableForTrade(startingCash, realizedProfit, realizedStockPL, deployed)
 
   return {
     // Cash physically in the account = gross trading cash flows (now including the real
@@ -225,6 +242,7 @@ export function computeTotals(
     // account is not sitting in cash anymore, so it must not be counted twice.
     totalCash: cash - deployed,
     realizedProfit,
+    realizedStockPL,
     totalDeployed: deployed,
     cashAvailableForTrade: bankroll,
     openCreditExposure,
@@ -250,12 +268,20 @@ export function totalDeployed(allocations: ProfitAllocation[]): number {
 
 /**
  * Cash Available for Trade — the actual trading bankroll you have left to deploy.
- * Formula: (Initial Starting Cash + Total Realized Profit) - Total Deployed
- * This is intentionally distinct from Total Realized Profit, which is a
- * cumulative, never-decreasing scoreboard of gross trading performance.
+ * Formula: (Starting Cash + Total Realized Profit + Realized Stock P/L) − Total Deployed
+ * Realized Stock P/L (gain/loss from completed wheel cycles on assigned shares) is a
+ * second, independent Scoreboard — kept separate from option-premium Realized Profit
+ * for visibility, but both real cash results belong in the same Bankroll formula.
+ * This is intentionally distinct from either Scoreboard individually, which are
+ * cumulative, never-decreasing records of gross trading performance.
  */
-export function cashAvailableForTrade(startingCash: number, realizedProfit: number, deployed: number): number {
-  return startingCash + realizedProfit - deployed
+export function cashAvailableForTrade(
+  startingCash: number,
+  realizedProfit: number,
+  realizedStockPL: number,
+  deployed: number
+): number {
+  return startingCash + realizedProfit + realizedStockPL - deployed
 }
 
 /**
@@ -375,6 +401,39 @@ export function deriveSecurityLots(trades: Trade[]): SecurityLot[] {
   }
 
   return lots
+}
+
+/**
+ * Core of the Realized Stock P/L audit trail — one row per chunk of shares called away
+ * from an already-derived lot, newest first. Split out from deriveStockPLEvents() so
+ * computeTotals() (which already has `lots` on hand) never has to re-derive them.
+ */
+function deriveStockPLEventsFromLots(lots: SecurityLot[]): StockPLEvent[] {
+  const events: StockPLEvent[] = []
+  for (const lot of lots) {
+    for (const chunk of lot.calledAwayInfo) {
+      events.push({
+        ticker: lot.ticker,
+        shares: chunk.shares,
+        costBasis: lot.costBasis,
+        salePrice: chunk.price,
+        pl: (chunk.price - lot.costBasis) * chunk.shares,
+        date: chunk.date,
+        putTradeId: lot.sourceTradeId,
+        callTradeId: chunk.tradeId,
+      })
+    }
+  }
+  return events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+}
+
+/**
+ * Derives the full audit trail behind Realized Stock P/L — one row per chunk of shares
+ * called away from a lot, newest first. Every dollar in the "Realized Stock P/L"
+ * Scoreboard traces back to exactly one row here, so the figure is never a black box.
+ */
+export function deriveStockPLEvents(trades: Trade[]): StockPLEvent[] {
+  return deriveStockPLEventsFromLots(deriveSecurityLots(trades))
 }
 
 /** Rolls up Security Lots into a per-ticker holdings summary, netting out shares reserved by currently-Open Covered Calls. */
