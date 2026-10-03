@@ -1,7 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { AppData, ProfitAllocation, Trade } from './types'
+import { AppData, ProfitAllocation, SharePurchase, Trade } from './types'
 import { DEFAULT_DATA, loadData, saveData } from './utils/storage'
-import { computeTotals, deriveHoldingsSummary, deriveStockPLEvents, isShortPut, uid } from './utils/calc'
+import {
+  cashSafeForDeployment,
+  computeTotals,
+  deriveHoldingsSummary,
+  deriveMonthlyPL,
+  deriveStockPLEvents,
+  isShortPut,
+  reserveBuffer,
+  uid,
+} from './utils/calc'
 import { useToast } from './hooks/useToast'
 
 import Header from './components/Header'
@@ -10,14 +19,16 @@ import ActiveLedger from './components/ActiveLedger'
 import SettledLedger from './components/SettledLedger'
 import AllocationLedger from './components/AllocationLedger'
 import SecuritiesLedger from './components/SecuritiesLedger'
+import MonthlyPLLedger from './components/MonthlyPLLedger'
 import TradeModal from './components/TradeModal'
 import CloseTradeModal from './components/CloseTradeModal'
 import AllocationModal from './components/AllocationModal'
+import BuySharesModal from './components/BuySharesModal'
 import SettingsPanel from './components/SettingsPanel'
 import ToastStack from './components/ToastStack'
 import ConfirmDialog from './components/ConfirmDialog'
 
-type View = 'dashboard' | 'active' | 'settled' | 'allocations' | 'securities'
+type View = 'dashboard' | 'active' | 'settled' | 'allocations' | 'securities' | 'monthly'
 
 interface CoveredCallPrefill {
   ticker: string
@@ -39,6 +50,10 @@ export default function App() {
   const [showAllocationModal, setShowAllocationModal] = useState(false)
   const [confirmDeleteAllocation, setConfirmDeleteAllocation] = useState<ProfitAllocation | null>(null)
   const [tradePrefill, setTradePrefill] = useState<CoveredCallPrefill | undefined>(undefined)
+  const [editingPurchase, setEditingPurchase] = useState<SharePurchase | null>(null)
+  const [showBuySharesModal, setShowBuySharesModal] = useState(false)
+  const [buySharesPrefillTicker, setBuySharesPrefillTicker] = useState<string | undefined>(undefined)
+  const [confirmDeletePurchase, setConfirmDeletePurchase] = useState<SharePurchase | null>(null)
   const { toasts, push, dismiss } = useToast()
 
   const firstRender = useRef(true)
@@ -54,11 +69,40 @@ export default function App() {
   const activeTrades = useMemo(() => data.trades.filter((t) => t.status === 'Open'), [data.trades])
   const settledTrades = useMemo(() => data.trades.filter((t) => t.status !== 'Open'), [data.trades])
   const totals = useMemo(
-    () => computeTotals(data.trades, data.settings.startingCash, data.profitAllocations),
-    [data.trades, data.settings.startingCash, data.profitAllocations]
+    () => computeTotals(data.trades, data.settings.startingCash, data.profitAllocations, data.sharePurchases),
+    [data.trades, data.settings.startingCash, data.profitAllocations, data.sharePurchases]
   )
-  const holdings = useMemo(() => deriveHoldingsSummary(data.trades), [data.trades])
-  const stockPLEvents = useMemo(() => deriveStockPLEvents(data.trades), [data.trades])
+  const holdings = useMemo(
+    () => deriveHoldingsSummary(data.trades, data.sharePurchases),
+    [data.trades, data.sharePurchases]
+  )
+  const stockPLEvents = useMemo(
+    () => deriveStockPLEvents(data.trades, data.sharePurchases),
+    [data.trades, data.sharePurchases]
+  )
+  const monthlyPL = useMemo(
+    () => deriveMonthlyPL(data.trades, data.sharePurchases),
+    [data.trades, data.sharePurchases]
+  )
+  // Cash Safe For Deployment — needed by the Buy Shares modal's live preview, computed the
+  // same way the Dashboard headline figure is, so the two numbers can never drift apart.
+  const cashSafe = useMemo(() => {
+    const reserveBufferAmount = reserveBuffer(data.settings.startingCash, data.settings.reserveBufferPercent)
+    return cashSafeForDeployment(
+      totals.cashAvailableForTrade,
+      reserveBufferAmount,
+      data.settings.reserveBufferEnabled,
+      totals.openExposureTotal,
+      totals.heldSecuritiesValue
+    )
+  }, [
+    totals.cashAvailableForTrade,
+    totals.openExposureTotal,
+    totals.heldSecuritiesValue,
+    data.settings.startingCash,
+    data.settings.reserveBufferPercent,
+    data.settings.reserveBufferEnabled,
+  ])
 
   function openNewTrade() {
     setEditingTrade(null)
@@ -224,6 +268,52 @@ export default function App() {
     setConfirmDeleteAllocation(null)
   }
 
+  // --- Buy Shares (direct cash share purchase) handlers ---
+  function openBuyShares(ticker?: string) {
+    setEditingPurchase(null)
+    setBuySharesPrefillTicker(ticker)
+    setShowBuySharesModal(true)
+  }
+
+  function openEditPurchase(purchase: SharePurchase) {
+    setEditingPurchase(purchase)
+    setBuySharesPrefillTicker(undefined)
+    setShowBuySharesModal(true)
+  }
+
+  function handleSavePurchase(purchase: SharePurchase) {
+    setData((prev) => {
+      const exists = prev.sharePurchases.some((p) => p.id === purchase.id)
+      const sharePurchases = exists
+        ? prev.sharePurchases.map((p) => (p.id === purchase.id ? purchase : p))
+        : [...prev.sharePurchases, purchase]
+      return { ...prev, sharePurchases }
+    })
+    push(
+      editingPurchase
+        ? 'Share purchase updated.'
+        : `Bought ${purchase.shares} shares of ${purchase.ticker} — added to Assigned Securities.`,
+      'success'
+    )
+    setShowBuySharesModal(false)
+    setEditingPurchase(null)
+    setBuySharesPrefillTicker(undefined)
+  }
+
+  function handleDeletePurchase(purchase: SharePurchase) {
+    setConfirmDeletePurchase(purchase)
+  }
+
+  function confirmDeletePurchaseAction() {
+    if (!confirmDeletePurchase) return
+    setData((prev) => ({
+      ...prev,
+      sharePurchases: prev.sharePurchases.filter((p) => p.id !== confirmDeletePurchase.id),
+    }))
+    push('Share purchase deleted.', 'success')
+    setConfirmDeletePurchase(null)
+  }
+
   return (
     <div className="min-h-screen bg-vault-950 text-slate-200">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
@@ -284,8 +374,13 @@ export default function App() {
               stockPLEvents={stockPLEvents}
               currency={data.settings.displayCurrency}
               onSellCoveredCall={openSellCoveredCall}
+              onBuyShares={openBuyShares}
+              onEditPurchase={openEditPurchase}
+              onDeletePurchase={handleDeletePurchase}
+              sharePurchases={data.sharePurchases}
             />
           )}
+          {view === 'monthly' && <MonthlyPLLedger rows={monthlyPL} currency={data.settings.displayCurrency} />}
           {view === 'allocations' && (
             <AllocationLedger
               allocations={data.profitAllocations}
@@ -331,6 +426,22 @@ export default function App() {
           onClose={() => {
             setShowAllocationModal(false)
             setEditingAllocation(null)
+          }}
+        />
+      )}
+
+      {showBuySharesModal && (
+        <BuySharesModal
+          purchase={editingPurchase}
+          prefillTicker={buySharesPrefillTicker}
+          holdings={holdings}
+          cashSafeForDeployment={cashSafe}
+          currency={data.settings.displayCurrency}
+          onSave={handleSavePurchase}
+          onClose={() => {
+            setShowBuySharesModal(false)
+            setEditingPurchase(null)
+            setBuySharesPrefillTicker(undefined)
           }}
         />
       )}
@@ -388,6 +499,17 @@ export default function App() {
           danger
           onConfirm={confirmDeleteAllocationAction}
           onCancel={() => setConfirmDeleteAllocation(null)}
+        />
+      )}
+
+      {confirmDeletePurchase && (
+        <ConfirmDialog
+          title="Delete Share Purchase?"
+          message={`This will permanently remove the purchase of ${confirmDeletePurchase.shares} shares of ${confirmDeletePurchase.ticker} from Assigned Securities. This cannot be undone.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={confirmDeletePurchaseAction}
+          onCancel={() => setConfirmDeletePurchase(null)}
         />
       )}
 
