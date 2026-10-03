@@ -1,7 +1,7 @@
 import React from 'react'
-import { LayoutDashboard, ListChecks, Archive, Settings, Plus, ShieldCheck, Landmark, Boxes } from 'lucide-react'
+import { LayoutDashboard, ListChecks, Archive, Settings, Plus, ShieldCheck, Landmark, Boxes, CalendarDays } from 'lucide-react'
 
-type View = 'dashboard' | 'active' | 'settled' | 'allocations' | 'securities'
+type View = 'dashboard' | 'active' | 'settled' | 'allocations' | 'securities' | 'monthly'
 
 interface Props {
   view: View
@@ -29,6 +29,7 @@ export default function Header({
     { key: 'active', label: 'Option Ledger', icon: <ListChecks size={16} />, count: activeCount },
     { key: 'settled', label: 'Settled Archive', icon: <Archive size={16} />, count: settledCount },
     { key: 'securities', label: 'Assigned Securities', icon: <Boxes size={16} />, count: securitiesCount },
+    { key: 'monthly', label: 'Monthly P/L', icon: <CalendarDays size={16} /> },
     { key: 'allocations', label: 'Profit Allocation', icon: <Landmark size={16} />, count: allocationCount },
   ]
 

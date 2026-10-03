@@ -1,4 +1,4 @@
-import { CREDIT_STRATEGIES, HoldingsSummary, ProfitAllocation, SecurityLot, SHORT_PUT_STRATEGIES, StockPLEvent, Trade } from '../types'
+import { CREDIT_STRATEGIES, HoldingsSummary, ProfitAllocation, SecurityLot, SharePurchase, SHORT_PUT_STRATEGIES, StockPLEvent, Trade } from '../types'
 
 export const isCredit = (strategy: Trade['strategy']) =>
   (CREDIT_STRATEGIES as string[]).includes(strategy)
@@ -161,12 +161,15 @@ export interface PortfolioTotals {
   closedPositionsCount: number
   winRate: number
   globalVelocity: number
+  /** Total cash spent (price × shares + fees) on direct cash Share Purchases, across all tickers. */
+  sharePurchaseCashOut: number
 }
 
 export function computeTotals(
   trades: Trade[],
   startingCash: number,
-  allocations: ProfitAllocation[] = []
+  allocations: ProfitAllocation[] = [],
+  sharePurchases: SharePurchase[] = []
 ): PortfolioTotals {
   let cash = startingCash
   let realizedProfit = 0
@@ -218,8 +221,17 @@ export function computeTotals(
   const globalVelocity =
     totalCapitalDays > 0 ? (totalReturnWeighted / totalCapitalDays) * 365 * 100 : 0
 
+  // Direct cash Share Purchases are a real cash-out event, just like a put assignment buying
+  // shares — the cash leaves the account the moment you use it to buy stock. Fees are part of
+  // the real cash spent, so they're included here too (not just folded into cost basis).
+  const sharePurchaseCashOut = sharePurchases.reduce(
+    (sum, p) => sum + (p.pricePerShare * p.shares + p.fees),
+    0
+  )
+  cash -= sharePurchaseCashOut
+
   // Derive Security Lots once and reuse for both Held Securities Value and Realized Stock P/L.
-  const lots = deriveSecurityLots(trades)
+  const lots = deriveSecurityLots(trades, sharePurchases)
 
   // Cost-basis value of shares still held from put assignments (Assigned Securities).
   // That cash already left Total Cash to buy the shares — see assignmentCashFlow() above —
@@ -254,6 +266,7 @@ export function computeTotals(
     closedPositionsCount,
     winRate,
     globalVelocity,
+    sharePurchaseCashOut,
   }
 }
 
@@ -350,17 +363,19 @@ export function uid(): string {
 }
 
 /**
- * Derives all Security Lots from the trade ledger. A lot is created for every short-put
- * trade Assigned (shares bought at strike), and consumed FIFO (oldest lot first) whenever
- * a Covered Call written on that ticker is itself Assigned (shares called away).
+ * Derives all Security Lots from the trade ledger plus any direct cash Share Purchases.
+ * A lot is created for every short-put trade Assigned (shares bought at strike) AND for
+ * every recorded SharePurchase (shares bought directly with cash), and consumed FIFO
+ * (oldest lot first, across both sources) whenever a Covered Call written on that ticker
+ * is itself Assigned (shares called away).
  *
- * This is a pure, fully-derived computation over `trades` — nothing about holdings is
- * ever separately persisted, so Undo/Delete/Edit on the underlying trades automatically
- * and correctly reverses share creation/consumption with zero extra sync logic.
+ * This is a pure, fully-derived computation over `trades`/`sharePurchases` — nothing about
+ * holdings is ever separately persisted, so Undo/Delete/Edit on the underlying records
+ * automatically and correctly reverses share creation/consumption with zero extra sync logic.
  */
-export function deriveSecurityLots(trades: Trade[]): SecurityLot[] {
-  // 1. Create one lot per Assigned short-put trade, ordered by acquisition date (FIFO).
-  const lots: SecurityLot[] = trades
+export function deriveSecurityLots(trades: Trade[], sharePurchases: SharePurchase[] = []): SecurityLot[] {
+  // 1. Create one lot per Assigned short-put trade...
+  const assignmentLots: SecurityLot[] = trades
     .filter((t) => t.status === 'Assigned' && isShortPut(t.strategy))
     .map((t) => {
       const originalShares = t.contracts * 100
@@ -373,11 +388,36 @@ export function deriveSecurityLots(trades: Trade[]): SecurityLot[] {
         costBasis: t.strike,
         acquiredDate: t.closeDate || t.updatedAt,
         sourceTradeId: t.id,
+        source: 'Assignment' as const,
         status: 'Held' as const,
         calledAwayInfo: [] as SecurityLot['calledAwayInfo'],
       }
     })
-    .sort((a, b) => new Date(a.acquiredDate).getTime() - new Date(b.acquiredDate).getTime())
+
+  // ...plus one lot per direct cash Share Purchase (cost basis includes fees, spread per share).
+  const purchaseLots: SecurityLot[] = sharePurchases.map((p) => {
+    const originalShares = p.shares
+    const costBasis = originalShares > 0 ? (p.pricePerShare * originalShares + p.fees) / originalShares : p.pricePerShare
+    return {
+      id: p.id,
+      ticker: p.ticker,
+      originalShares,
+      shares: originalShares,
+      calledAwayShares: 0,
+      costBasis,
+      acquiredDate: p.date,
+      sourceTradeId: p.id,
+      source: 'Purchase' as const,
+      status: 'Held' as const,
+      calledAwayInfo: [] as SecurityLot['calledAwayInfo'],
+    }
+  })
+
+  // Merge both sources and sort chronologically so FIFO call-away consumption below
+  // treats assignment shares and purchased shares identically — oldest acquired first.
+  const lots: SecurityLot[] = [...assignmentLots, ...purchaseLots].sort(
+    (a, b) => new Date(a.acquiredDate).getTime() - new Date(b.acquiredDate).getTime()
+  )
 
   // 2. Walk Assigned Covered Calls chronologically, consuming FIFO lots on the same ticker.
   const calledAwayCalls = trades
@@ -432,13 +472,56 @@ function deriveStockPLEventsFromLots(lots: SecurityLot[]): StockPLEvent[] {
  * called away from a lot, newest first. Every dollar in the "Realized Stock P/L"
  * Scoreboard traces back to exactly one row here, so the figure is never a black box.
  */
-export function deriveStockPLEvents(trades: Trade[]): StockPLEvent[] {
-  return deriveStockPLEventsFromLots(deriveSecurityLots(trades))
+export function deriveStockPLEvents(trades: Trade[], sharePurchases: SharePurchase[] = []): StockPLEvent[] {
+  return deriveStockPLEventsFromLots(deriveSecurityLots(trades, sharePurchases))
+}
+
+/**
+ * Preview the effect of a proposed cash Share Purchase on a ticker's average cost basis and
+ * progress toward the 100-share covered-call threshold, BEFORE the purchase is saved. Used by
+ * the Buy Shares modal to show "the difference between what you spend" in real time:
+ * your current avg cost basis vs. the new blended average, and how many shares still needed.
+ */
+export interface SharePurchasePreview {
+  currentShares: number
+  currentAvgCostBasis: number
+  newShares: number // shares after this purchase
+  newAvgCostBasis: number // blended average cost basis after this purchase
+  costBasisDelta: number // newAvgCostBasis - currentAvgCostBasis (negative = cheaper, lowers basis)
+  totalCost: number // cash cost of THIS purchase only: price * shares + fees
+  sharesToGo: number // shares still needed to reach 100 (covered-call eligible), floor 0
+  willReach100: boolean // true if newShares >= 100 and currentShares < 100
+}
+
+export function previewSharePurchase(
+  currentHolding: HoldingsSummary | undefined,
+  purchaseShares: number,
+  pricePerShare: number,
+  fees: number
+): SharePurchasePreview {
+  const currentShares = currentHolding?.heldShares || 0
+  const currentAvgCostBasis = currentHolding?.avgCostBasis || 0
+  const currentTotalCost = currentShares * currentAvgCostBasis
+
+  const totalCost = pricePerShare * purchaseShares + fees
+  const newShares = currentShares + purchaseShares
+  const newAvgCostBasis = newShares > 0 ? (currentTotalCost + totalCost) / newShares : 0
+
+  return {
+    currentShares,
+    currentAvgCostBasis,
+    newShares,
+    newAvgCostBasis,
+    costBasisDelta: newAvgCostBasis - currentAvgCostBasis,
+    totalCost,
+    sharesToGo: Math.max(0, 100 - newShares),
+    willReach100: newShares >= 100 && currentShares < 100,
+  }
 }
 
 /** Rolls up Security Lots into a per-ticker holdings summary, netting out shares reserved by currently-Open Covered Calls. */
-export function deriveHoldingsSummary(trades: Trade[]): HoldingsSummary[] {
-  const lots = deriveSecurityLots(trades)
+export function deriveHoldingsSummary(trades: Trade[], sharePurchases: SharePurchase[] = []): HoldingsSummary[] {
+  const lots = deriveSecurityLots(trades, sharePurchases)
   const byTicker = new Map<string, SecurityLot[]>()
   for (const lot of lots) {
     if (!byTicker.has(lot.ticker)) byTicker.set(lot.ticker, [])
@@ -473,4 +556,69 @@ export function deriveHoldingsSummary(trades: Trade[]): HoldingsSummary[] {
   }
 
   return summaries.sort((a, b) => a.ticker.localeCompare(b.ticker))
+}
+
+/**
+ * One row of the Monthly P/L breakdown — realized performance bucketed by calendar month
+ * (YYYY-MM, in local time), split by source so option premium and stock gains never blend:
+ * optionPL (sum of realizedPL() for trades closed that month, keyed by closeDate) and
+ * stockPL (sum of StockPLEvent.pl for call-away events that month, keyed by event date).
+ * Fully derived from `trades` + `sharePurchases` on every call — nothing new to persist.
+ */
+export interface MonthlyPL {
+  month: string // 'YYYY-MM'
+  optionPL: number
+  stockPL: number
+  totalPL: number
+  tradesClosed: number
+}
+
+function monthKey(iso: string): string {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return 'unknown'
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+export function monthLabel(key: string): string {
+  if (key === 'unknown') return 'Unknown'
+  const [y, m] = key.split('-').map(Number)
+  const d = new Date(y, m - 1, 1)
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long' })
+}
+
+/**
+ * Buckets Total Realized Profit (option premium) and Realized Stock P/L into calendar
+ * months, newest first. Each trade's option P/L is keyed by its closeDate (or expiry as a
+ * fallback); each stock P/L event is keyed by its own date (the Covered Call assignment that
+ * triggered the call-away). A month only appears if it has at least one of either.
+ */
+export function deriveMonthlyPL(trades: Trade[], sharePurchases: SharePurchase[] = []): MonthlyPL[] {
+  const byMonth = new Map<string, MonthlyPL>()
+
+  function bucket(key: string): MonthlyPL {
+    let b = byMonth.get(key)
+    if (!b) {
+      b = { month: key, optionPL: 0, stockPL: 0, totalPL: 0, tradesClosed: 0 }
+      byMonth.set(key, b)
+    }
+    return b
+  }
+
+  for (const t of trades) {
+    if (t.status === 'Open') continue
+    const key = monthKey(t.closeDate || t.expiry)
+    const b = bucket(key)
+    b.optionPL += realizedPL(t)
+    b.tradesClosed += 1
+  }
+
+  const stockEvents = deriveStockPLEvents(trades, sharePurchases)
+  for (const ev of stockEvents) {
+    const key = monthKey(ev.date)
+    const b = bucket(key)
+    b.stockPL += ev.pl
+  }
+
+  const rows = Array.from(byMonth.values()).map((b) => ({ ...b, totalPL: b.optionPL + b.stockPL }))
+  return rows.sort((a, b) => (a.month < b.month ? 1 : a.month > b.month ? -1 : 0))
 }

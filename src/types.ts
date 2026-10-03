@@ -65,6 +65,7 @@ export interface AppData {
   version: number
   trades: Trade[]
   profitAllocations: ProfitAllocation[]
+  sharePurchases: SharePurchase[]
   settings: AppSettings
 }
 
@@ -99,16 +100,37 @@ export const SHORT_PUT_STRATEGIES: StrategyType[] = ['Cash-Secured Put', 'Naked 
  * FIFO (oldest acquisition first) across lots, tracked in `calledAwayInfo`.
  */
 export interface SecurityLot {
-  id: string // = sourceTradeId (one lot per assignment event)
+  id: string // = sourceTradeId (one lot per assignment event) or sourcePurchaseId (one lot per cash purchase)
   ticker: string
-  originalShares: number // shares created at assignment (contracts * 100)
+  originalShares: number // shares created at assignment (contracts * 100) or bought via cash purchase
   shares: number // shares still held in this lot (originalShares - calledAwayShares)
   calledAwayShares: number
-  costBasis: number // per-share cost = strike price at assignment
-  acquiredDate: string // ISO date = the assignment trade's closeDate
+  costBasis: number // per-share cost = strike price at assignment, or (shares*price + fees)/shares for a cash purchase
+  acquiredDate: string // ISO date = the assignment trade's closeDate, or the purchase date
   sourceTradeId: string
+  /** Where this lot came from: a put assignment, or a direct cash purchase via the Buy Shares action. */
+  source: 'Assignment' | 'Purchase'
   status: 'Held' | 'Partially Called' | 'Called Away'
   calledAwayInfo: { tradeId: string; shares: number; price: number; date: string }[]
+}
+
+/**
+ * A direct cash purchase of shares — e.g. using idle "Agile Cash" / Cash Safe For Deployment
+ * to buy toward a 100-share covered-call-eligible position, independent of any put assignment.
+ * Creates a SecurityLot exactly like an assignment does (see deriveSecurityLots), so purchased
+ * shares blend into the same average cost basis, FIFO call-away consumption, and Held Securities
+ * Value carve-out as assigned shares — the two acquisition paths are indistinguishable downstream.
+ */
+export interface SharePurchase {
+  id: string
+  ticker: string
+  date: string // ISO date of the purchase
+  shares: number // whole shares bought, > 0
+  pricePerShare: number
+  fees: number // total fees/commissions for this purchase, in $
+  notes?: string
+  createdAt: string
+  updatedAt: string
 }
 
 /** Per-ticker roll-up of held shares, average cost, and how much is available to cover new Covered Calls. */

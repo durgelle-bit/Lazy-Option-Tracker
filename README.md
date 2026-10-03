@@ -46,13 +46,22 @@
 ### 📦 Assigned Securities — NEW
 Closes the gap where a Covered Call was just a label with no link to real share ownership.
 - Settling a **Cash-Secured Put** or **Naked Put** as **Assigned** automatically creates a share lot here: `contracts × 100` shares at a cost basis equal to the strike price, dated to the assignment's close date.
-- Holdings are grouped by ticker with **held shares**, **average cost basis**, **total cost**, and how many shares are **reserved** by any Covered Call you currently have Open on that ticker vs. how many are still **available to cover** a new one.
+- **Buy Shares (NEW)** — add to a position directly with idle cash (your "Agile Cash"), independent of any put assignment. Click **Buy Shares** (top of the tab, or per-ticker row) to enter Ticker, Shares, Price/Share, Fees, Date. A live preview shows: current → new **average cost basis** and the exact **$/share delta** this purchase causes (cheaper purchases lower your basis, shown in green; pricier ones raise it, shown in amber), a **progress bar toward 100 shares** (the covered-call eligibility threshold) with "N more to reach 100" / "🎉 Covered-call eligible!", and your **Cash Safe For Deployment after this buy** so you can see exactly how much spendable cash remains (or if you'd be overspending it). Purchased shares create a Security Lot exactly like an assignment does — same FIFO call-away consumption, same blended average cost basis, same Held Securities Value carve-out — so the two acquisition paths (assignment vs. direct purchase) are fully interchangeable downstream. Each purchase can be edited or deleted from the expanded lot row.
+- Holdings are grouped by ticker with **held shares**, **average cost basis**, **total cost**, and how many shares are **reserved** by any Covered Call you currently have Open on that ticker vs. how many are still **available to cover** a new one. Each ticker row shows "N more to reach 100" until the threshold is met.
 - **Sell Covered Call** action on any ticker with ≥100 available shares opens the trade form pre-filled with the ticker, "Covered Call" strategy, and a strike suggestion at your average cost basis.
 - If that Covered Call is later settled as **Assigned** (shares called away), the shares are automatically removed from the oldest lot(s) first (FIFO) — no manual bookkeeping.
 - **Fully derived, nothing extra to store or migrate**: holdings are computed live from the trade ledger every render (same pattern as Total Cash / Open Exposure), so editing, undoing, or deleting the underlying assignment/Covered Call trades keeps the share ledger perfectly in sync automatically. Expand a ticker's row to see individual lots and their FIFO consumption history.
 - **Real cash-flow accounting, not a static snapshot**: an Assignment moves real cash — buying shares on a put assignment pulls `strike × contracts × 100` out of Total Cash; a Covered Call being called away adds `strike × contracts × 100` back in. While shares are held, their cost-basis value is also carved out of **Cash Safe For Deployment** (labeled "Held Shares" on the dashboard card) so you never see spendable cash that's actually parked in stock.
 - **No double-counted collateral**: an *Open* Covered Call no longer counts toward Open Credit Exposure (which is cash collateral) — it's secured by the shares you hold, not cash, and that share value is already reflected in Held Securities Value. Every other credit strategy (Cash-Secured Put, Naked Put/Call, Credit Spread) still reserves cash collateral exactly as before.
 - **Realized Stock P/L History** table at the bottom of this tab — a full audit trail behind the dashboard's Realized Stock P/L Scoreboard. One row per completed wheel-cycle event: ticker, shares, cost basis (put strike), sale price (call strike), date, and the resulting P/L. Every dollar of the headline Realized Stock P/L figure traces back to exactly one row here — it's never an opaque black-box number. Persists even after a ticker's shares are fully called away and disappear from the holdings table above.
+
+### 📅 Monthly P/L — NEW
+A dedicated tab that buckets all realized performance by calendar month, so trends are visible at a glance.
+- Each settled trade's option-premium realized P/L is bucketed by its **close date** (or expiry if never explicitly closed).
+- Each completed wheel-cycle **Stock P/L** event (shares called away via a Covered Call) is bucketed by the date of that call-away.
+- Per-month row shows: Trades Closed, Option Premium P/L, Stock P/L, and combined Total P/L, plus a relative bar and a "Best Month" badge.
+- Summary chips at the top roll up Total Realized (All Months), Option Premium P/L, and Stock P/L.
+- 100% derived from the Settled Ledger + Assigned Securities history — nothing new to persist, so it's always in sync.
 
 ### 💸 Profit Allocation (Deployment Ledger) — NEW
 - A dedicated tab to record every use of realized profit: **Withdrawal** or **Stock Purchase**.
@@ -185,7 +194,7 @@ Covered Call Assigned              → Total Cash += strike × contracts × 100 
 Because this is tracked as an actual cash-flow event (not a snapshot of "shares × cost basis"), a full wheel-strategy round trip — assigned on a put, then the resulting shares called away on a covered call at a *different* strike — automatically surfaces the resulting stock-level gain or loss in Total Cash. **Realized Stock P/L makes that same gain/loss visible as its own labeled Scoreboard** (not just buried inside Total Cash), with a full per-event audit trail in the Assigned Securities tab — both numbers are derived from the exact same underlying Security Lot data, so they can never drift apart or disagree.
 
 ## Storage
-- **Engine**: Browser `localStorage`, key `option-vault:data:v1` (schema version 2 — auto-migrates from version 1 saves by defaulting `profitAllocations` to `[]`, and defaults `reserveBufferEnabled`/`reserveBufferPercent` to `true`/`20` for any save or JSON import that predates the Reserve Buffer feature).
+- **Engine**: Browser `localStorage`, key `option-vault:data:v1` (schema version 3 — auto-migrates from older saves by defaulting `profitAllocations` to `[]`, `sharePurchases` to `[]` for any save/import that predates the Buy Shares feature, and `reserveBufferEnabled`/`reserveBufferPercent` to `true`/`20` for pre-Reserve-Buffer saves).
 - **No servers, no databases, no third-party APIs.** This is intentional — 100% offline-capable after first load (aside from CDN font/icon assets).
 
 ## User Guide

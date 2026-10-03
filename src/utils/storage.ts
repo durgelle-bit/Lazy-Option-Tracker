@@ -1,12 +1,13 @@
-import { AppData, ProfitAllocation, Trade } from '../types'
+import { AppData, ProfitAllocation, SharePurchase, Trade } from '../types'
 
 const STORAGE_KEY = 'option-vault:data:v1'
-const CURRENT_VERSION = 2
+const CURRENT_VERSION = 3
 
 export const DEFAULT_DATA: AppData = {
   version: CURRENT_VERSION,
   trades: [],
   profitAllocations: [],
+  sharePurchases: [],
   settings: {
     startingCash: 10000,
     displayCurrency: 'USD',
@@ -46,6 +47,20 @@ function isValidAllocation(a: any): a is ProfitAllocation {
   )
 }
 
+/** Basic structural validation for a direct cash Share Purchase entry. */
+function isValidSharePurchase(p: any): p is SharePurchase {
+  return (
+    p &&
+    typeof p === 'object' &&
+    typeof p.id === 'string' &&
+    typeof p.ticker === 'string' &&
+    typeof p.date === 'string' &&
+    typeof p.shares === 'number' &&
+    typeof p.pricePerShare === 'number' &&
+    typeof p.fees === 'number'
+  )
+}
+
 function isValidAppData(data: any): data is AppData {
   if (!data || typeof data !== 'object') return false
   if (!Array.isArray(data.trades)) return false
@@ -56,6 +71,11 @@ function isValidAppData(data: any): data is AppData {
   if (data.profitAllocations !== undefined) {
     if (!Array.isArray(data.profitAllocations)) return false
     if (!data.profitAllocations.every(isValidAllocation)) return false
+  }
+  // sharePurchases is optional for backward compatibility with pre-v3 exports/saves
+  if (data.sharePurchases !== undefined) {
+    if (!Array.isArray(data.sharePurchases)) return false
+    if (!data.sharePurchases.every(isValidSharePurchase)) return false
   }
   return true
 }
@@ -73,11 +93,12 @@ export function loadData(): AppData {
       return structuredCloneSafe(DEFAULT_DATA)
     }
 
-    // Fill any missing fields defensively (forward-compat with older v1/v2 saves)
+    // Fill any missing fields defensively (forward-compat with older v1/v2/v3 saves)
     return {
       version: parsed.version ?? CURRENT_VERSION,
       trades: parsed.trades,
       profitAllocations: parsed.profitAllocations ?? [],
+      sharePurchases: parsed.sharePurchases ?? [],
       settings: {
         startingCash: parsed.settings.startingCash ?? DEFAULT_DATA.settings.startingCash,
         displayCurrency: parsed.settings.displayCurrency ?? DEFAULT_DATA.settings.displayCurrency,
@@ -151,6 +172,7 @@ export function importFromFile(file: File): Promise<AppData> {
           version: parsed.version ?? CURRENT_VERSION,
           trades: parsed.trades,
           profitAllocations: parsed.profitAllocations ?? [],
+          sharePurchases: parsed.sharePurchases ?? [],
           settings: {
             startingCash: parsed.settings.startingCash ?? DEFAULT_DATA.settings.startingCash,
             displayCurrency: parsed.settings.displayCurrency ?? DEFAULT_DATA.settings.displayCurrency,
